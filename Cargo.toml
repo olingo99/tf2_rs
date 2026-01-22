@@ -1,0 +1,20 @@
+[package]
+name = "tf2_rs"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "tf2_rs"
+crate-type = ["rlib"]
+
+[dependencies]
+cxx = "1"
+thiserror = "1"
+rclrs = "0.7"
+geometry_msgs = "*"
+tf2_msgs = "*"
+sensor_msgs = "*"
+std_msgs = "*"
+
+[build-dependencies]
+cxx-build = "1"
