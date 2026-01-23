@@ -1,7 +1,7 @@
 #include "tf2_wrapper.h"
 
 // cxx-generated header for shared structs (Tf2Time, Tf2TransformStamped, Tf2PointCloud2, etc.)
-#include "tf2_rs/src/bridge.rs.h"
+#include "tf2_rs/src/ffi.rs.h"
 
 #include <chrono>
 #include <string>
@@ -35,6 +35,44 @@
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
+#include <tf2/exceptions.h>
+
+
+static Tf2Status ok() {
+  return Tf2Status{Tf2Errc::Ok, ""};
+}
+
+static Tf2Status status(Tf2Errc code, const std::string& msg) {
+  Tf2Status s;
+  s.code = code;
+  s.message = msg;
+  return s;
+}
+
+
+
+template <class Fn>
+static Tf2Status with_tf2_status(Fn&& fn) {
+  try {
+    fn();
+    return ok();
+  } catch (const tf2::LookupException& e) {
+    return status(Tf2Errc::Lookup, e.what());
+  } catch (const tf2::ConnectivityException& e) {
+    return status(Tf2Errc::Connectivity, e.what());
+  } catch (const tf2::ExtrapolationException& e) {
+    return status(Tf2Errc::Extrapolation, e.what());
+  } catch (const tf2::InvalidArgumentException& e) {
+    return status(Tf2Errc::InvalidArgument, e.what());
+  } catch (const tf2::TransformException& e) {
+    return status(Tf2Errc::Other, e.what());
+  } catch (const std::exception& e) {
+    return status(Tf2Errc::Other, e.what());
+  } catch (...) {
+    return status(Tf2Errc::Other, "unknown exception");
+  }
+}
+
 
 static tf2::TimePoint to_timepoint(const Tf2Time& t) {
   // TF2 convention: (0,0) means "latest available"
@@ -101,44 +139,89 @@ static Tf2TransformStamped from_ros(const geometry_msgs::msg::TransformStamped& 
 // ---------------- BufferCoreWrapper ----------------
 
 BufferCoreWrapper::BufferCoreWrapper(uint64_t cache_time_ns)
-: buffer_(tf2::Duration(std::chrono::nanoseconds(cache_time_ns))) {}
+  : buffer_(tf2::Duration(std::chrono::nanoseconds(cache_time_ns))) {}
 
-void BufferCoreWrapper::clear() {
+void BufferCoreWrapper::clear() const{
   buffer_.clear();
 }
 
-bool BufferCoreWrapper::set_transform(
+Tf2Status BufferCoreWrapper::set_transform(
     const Tf2TransformStamped& tf,
     rust::Str authority,
-    bool is_static) {
-  const auto msg = to_ros(tf);
-  return buffer_.setTransform(msg, std::string(authority), is_static);
+    bool is_static,
+    bool& out_ok) const
+{
+  return with_tf2_status([&] {
+    const auto msg = to_ros(tf);
+    out_ok = buffer_.setTransform(msg, std::string(authority), is_static);
+  });
 }
 
-bool BufferCoreWrapper::can_transform(
+
+Tf2Status BufferCoreWrapper::can_transform(
     rust::Str target_frame,
     rust::Str source_frame,
-    const Tf2Time& time) const {
+    const Tf2Time& time,
+    bool& out_ok) const
+{
   const auto tp = to_timepoint(time);
+
+  std::string err;
   try {
-    (void)buffer_.lookupTransform(std::string(target_frame), std::string(source_frame), tp);
-    return true;
+    out_ok = buffer_.canTransform(
+        std::string(target_frame),
+        std::string(source_frame),
+        tp,
+        &err);
+  } catch (const tf2::LookupException& e) {
+    out_ok = false;
+    return status(Tf2Errc::Lookup, e.what());
+  } catch (const tf2::ConnectivityException& e) {
+    out_ok = false;
+    return status(Tf2Errc::Connectivity, e.what());
+  } catch (const tf2::ExtrapolationException& e) {
+    out_ok = false;
+    return status(Tf2Errc::Extrapolation, e.what());
+  } catch (const tf2::InvalidArgumentException& e) {
+    out_ok = false;
+    return status(Tf2Errc::InvalidArgument, e.what());
+  } catch (const tf2::TransformException& e) {
+    out_ok = false;
+    return status(Tf2Errc::Other, e.what());
+  } catch (const std::exception& e) {
+    out_ok = false;
+    return status(Tf2Errc::Other, e.what());
   } catch (...) {
-    return false;
+    out_ok = false;
+    return status(Tf2Errc::Other, "unknown exception");
   }
+
+  if (!out_ok && !err.empty()) {
+    // Optional: carry diagnostics without making it an error
+    return status(Tf2Errc::Ok, err);
+  }
+  return ok();
 }
 
-Tf2TransformStamped BufferCoreWrapper::lookup_transform(
+
+Tf2Status BufferCoreWrapper::lookup_transform(
     rust::Str target_frame,
     rust::Str source_frame,
-    const Tf2Time& time) const {
-  const auto tp = to_timepoint(time);
-  auto tf = buffer_.lookupTransform(std::string(target_frame), std::string(source_frame), tp);
-  return from_ros(tf);
+    const Tf2Time& time,
+    Tf2TransformStamped& out_tf) const
+{
+  return with_tf2_status([&] {
+    const auto tp = to_timepoint(time);
+    auto tf = buffer_.lookupTransform(
+        std::string(target_frame),
+        std::string(source_frame),
+        tp);
+    out_tf = from_ros(tf);
+  });
 }
 
-std::unique_ptr<BufferCoreWrapper> new_buffer_core(uint64_t cache_time_ns) {
-  return std::make_unique<BufferCoreWrapper>(cache_time_ns);
+std::shared_ptr<BufferCoreWrapper> new_buffer_core(uint64_t cache_time_ns) {
+  return std::make_shared<BufferCoreWrapper>(cache_time_ns);
 }
 
 // ---------------- doTransform wrappers ----------------
@@ -162,14 +245,17 @@ static Tf2PointStamped from_ros(const geometry_msgs::msg::PointStamped& v) {
   return out;
 }
 
-Tf2PointStamped do_transform_point_stamped(
+Tf2Status do_transform_point_stamped(
     const Tf2PointStamped& input,
-    const Tf2TransformStamped& tf) {
-  const auto in_ros = to_ros(input);
-  const auto tf_ros = to_ros(tf);
-  geometry_msgs::msg::PointStamped out_ros;
-  tf2::doTransform(in_ros, out_ros, tf_ros);
-  return from_ros(out_ros);
+    const Tf2TransformStamped& tf,
+    Tf2PointStamped& out) {
+  return with_tf2_status([&] {
+    const auto in_ros = to_ros(input);
+    const auto tf_ros = to_ros(tf);
+    geometry_msgs::msg::PointStamped out_ros;
+    tf2::doTransform(in_ros, out_ros, tf_ros);
+    out = from_ros(out_ros);
+  });
 }
 
 // geometry_msgs/PoseStamped
@@ -199,14 +285,17 @@ static Tf2PoseStamped from_ros(const geometry_msgs::msg::PoseStamped& v) {
   return out;
 }
 
-Tf2PoseStamped do_transform_pose_stamped(
+Tf2Status do_transform_pose_stamped(
     const Tf2PoseStamped& input,
-    const Tf2TransformStamped& tf) {
-  const auto in_ros = to_ros(input);
-  const auto tf_ros = to_ros(tf);
-  geometry_msgs::msg::PoseStamped out_ros;
-  tf2::doTransform(in_ros, out_ros, tf_ros);
-  return from_ros(out_ros);
+    const Tf2TransformStamped& tf,
+    Tf2PoseStamped& out) {
+  return with_tf2_status([&] {
+    const auto in_ros = to_ros(input);
+    const auto tf_ros = to_ros(tf);
+    geometry_msgs::msg::PoseStamped out_ros;
+    tf2::doTransform(in_ros, out_ros, tf_ros);
+    out = from_ros(out_ros);
+  });
 }
 
 // sensor_msgs/PointCloud2
@@ -263,13 +352,15 @@ static Tf2PointCloud2 from_ros_pc2(const sensor_msgs::msg::PointCloud2& in) {
   return out;
 }
 
-Tf2PointCloud2 do_transform_pointcloud2(
+Tf2Status do_transform_pointcloud2(
     const Tf2PointCloud2& input,
-    const Tf2TransformStamped& tf) {
-  const auto in_ros = to_ros_pc2(input);
-  const auto tf_ros = to_ros(tf);
-
-  sensor_msgs::msg::PointCloud2 out_ros;
-  tf2::doTransform(in_ros, out_ros, tf_ros);  // specialization from tf2_sensor_msgs
-  return from_ros_pc2(out_ros);
+    const Tf2TransformStamped& tf,
+    Tf2PointCloud2& out) {
+    return with_tf2_status([&] {
+    const auto in_ros = to_ros_pc2(input);
+    const auto tf_ros = to_ros(tf);
+    sensor_msgs::msg::PointCloud2 out_ros;
+    tf2::doTransform(in_ros, out_ros, tf_ros);
+      out = from_ros_pc2(out_ros);
+  });
 }

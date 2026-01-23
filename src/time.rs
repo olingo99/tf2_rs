@@ -1,0 +1,44 @@
+use crate::ffi::ffi;
+use crate::transform::HasHeader;
+
+
+#[derive(Clone, Copy, Debug)]
+
+pub enum TimeSpec {
+    Latest,
+    Stamp {sec: i32, nanosec: u32},
+    FromMsg
+}
+
+impl TimeSpec {
+    pub fn resolve<T: HasHeader + ?Sized>(self, msg: &T) -> LookupTime {
+        match self {
+            TimeSpec::Latest => LookupTime::Latest,
+            TimeSpec::Stamp { sec, nanosec } => LookupTime::Time { sec, nanosec },
+            TimeSpec::FromMsg => {
+                let (sec, nanosec) = msg.stamp();
+                LookupTime::Time { sec, nanosec }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum LookupTime {
+    Latest,
+    Time { sec: i32, nanosec: u32 },
+}
+
+impl LookupTime {
+    pub fn to_ffi(self) -> ffi::Tf2Time {
+        match self {
+            LookupTime::Latest => ffi::Tf2Time { sec: 0, nanosec: 0 },
+            LookupTime::Time { sec, nanosec } => ffi::Tf2Time { sec, nanosec },
+        }
+    }
+
+        pub fn from_msg<M: HasHeader + ?Sized>(msg: &M) -> Self {
+        let (sec, nanosec) = msg.stamp();
+        LookupTime::Time { sec, nanosec }
+    }
+}

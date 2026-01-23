@@ -1,5 +1,6 @@
-use rclrs::IntoPrimitiveOptions;
-use crate::{BufferCore, TransformStamped};
+use crate::buffer::BufferCore;
+use crate::transform::geometry_msgs::convert_transform_stamped;
+use rclrs::{IntoPrimitiveOptions, Logger, log_error};
 
 /// NOTE: This assumes you have Rust message crates for:
 /// - tf2_msgs/msg/TFMessage
@@ -16,33 +17,37 @@ pub struct TransformListener {
 }
 
 impl TransformListener {
-    pub fn new(
-        node: &rclrs::Node,
-        buffer: BufferCore,
-    ) -> Result<Self, rclrs::RclrsError> {
+    pub fn new(node: &rclrs::Node, buffer: BufferCore) -> Result<Self, rclrs::RclrsError> {
         // Match common TF listener QoS:
         // /tf: keep_last(100), reliable, volatile
         // /tf_static: keep_last(100), reliable, transient_local
         // :contentReference[oaicite:5]{index=5}
         let buf_tf = buffer.clone();
-        let tf_sub = node.create_subscription(
-            "/tf".keep_last(100).reliable(),
-            move |msg: TFMessage| {
-                for t in msg.transforms {
-                    let tf = convert_transform_stamped(&t);
-                    let _ = buf_tf.set_transform(&tf, "tf2_rs", false);
-                }
-            },
-        )?;
+        let node_cb = node.clone();
+        let tf_sub =
+            node.create_subscription("/tf".keep_last(100).reliable(), move |msg: TFMessage| {
+                buf_tf.ingest_tf_message(msg, "tf2_rs", false, |e| {
+                    log_error!(
+                        node_cb.logger(),
+                        "Tf2 bindings error on set_transform:  {}",
+                        e
+                    )
+                });
+            })?;
+
+        let node_cb = node.clone();
 
         let buf_static = buffer.clone();
         let tf_static_sub = node.create_subscription(
             "/tf_static".keep_last(100).reliable().transient_local(),
             move |msg: TFMessage| {
-                for t in msg.transforms {
-                    let tf = convert_transform_stamped(&t);
-                    let _ = buf_static.set_transform(&tf, "tf2_rs", true);
-                }
+                buf_static.ingest_tf_message(msg, "tf2_rs", true, |e| {
+                    log_error!(
+                        node_cb.logger(),
+                        "Tf2 bindings error on set_transform:  {}",
+                        e
+                    )
+                });
             },
         )?;
 
@@ -50,25 +55,5 @@ impl TransformListener {
             _tf_sub: tf_sub,
             _tf_static_sub: tf_static_sub,
         })
-    }
-}
-
-fn convert_transform_stamped(t: &geometry_msgs::msg::TransformStamped) -> TransformStamped {
-    TransformStamped {
-        stamp_sec: t.header.stamp.sec,
-        stamp_nanosec: t.header.stamp.nanosec,
-        parent_frame: t.header.frame_id.clone(),
-        child_frame: t.child_frame_id.clone(),
-        translation: [
-            t.transform.translation.x,
-            t.transform.translation.y,
-            t.transform.translation.z,
-        ],
-        rotation: [
-            t.transform.rotation.x,
-            t.transform.rotation.y,
-            t.transform.rotation.z,
-            t.transform.rotation.w,
-        ],
     }
 }

@@ -1,7 +1,7 @@
 use std::{env, path::PathBuf};
 
 fn main() {
-    let mut b = cxx_build::bridge("src/bridge.rs");
+    let mut b = cxx_build::bridge("src/ffi.rs");
     b.file("src/tf2_wrapper.cpp")
         .include("include")
         .flag_if_supported("-std=c++17");
@@ -86,7 +86,7 @@ fn main() {
     // println!("cargo:rustc-link-lib=rclcpp");
 
 
-    println!("cargo:rerun-if-changed=src/bridge.rs");
+    println!("cargo:rerun-if-changed=src/ffi.rs");
     println!("cargo:rerun-if-changed=src/tf2_wrapper.cpp");
     println!("cargo:rerun-if-changed=include/tf2_wrapper.h");
 }
