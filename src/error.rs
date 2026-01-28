@@ -1,5 +1,5 @@
+use crate::ffi::ffi::{Tf2Errc, Tf2Status};
 use thiserror::Error;
-use crate::ffi::ffi::{Tf2Status,Tf2Errc};
 
 #[derive(Error, Debug)]
 pub enum Tf2Error {
@@ -14,7 +14,6 @@ pub enum Tf2Error {
     #[error("tf2 error: {0}")]
     Other(String),
 }
-
 
 pub fn check_status(st: Tf2Status) -> Result<(), Tf2Error> {
     match st.code {

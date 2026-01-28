@@ -1,13 +1,11 @@
 use crate::ffi::ffi;
 use crate::transform::HasHeader;
 
-
 #[derive(Clone, Copy, Debug)]
-
 pub enum TimeSpec {
     Latest,
-    Stamp {sec: i32, nanosec: u32},
-    FromMsg
+    Stamp { sec: i32, nanosec: u32 },
+    FromMsg,
 }
 
 impl TimeSpec {
@@ -23,22 +21,24 @@ impl TimeSpec {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LookupTime {
     Latest,
     Time { sec: i32, nanosec: u32 },
 }
 
 impl LookupTime {
-    pub fn to_ffi(self) -> ffi::Tf2Time {
-        match self {
-            LookupTime::Latest => ffi::Tf2Time { sec: 0, nanosec: 0 },
-            LookupTime::Time { sec, nanosec } => ffi::Tf2Time { sec, nanosec },
-        }
-    }
-
-        pub fn from_msg<M: HasHeader + ?Sized>(msg: &M) -> Self {
+    pub fn from_msg<M: HasHeader + ?Sized>(msg: &M) -> Self {
         let (sec, nanosec) = msg.stamp();
         LookupTime::Time { sec, nanosec }
+    }
+}
+
+impl From<LookupTime> for ffi::Tf2Time {
+    fn from(v: LookupTime) -> Self {
+        match v {
+            LookupTime::Latest => Self { sec: 0, nanosec: 0 },
+            LookupTime::Time { sec, nanosec } => Self { sec, nanosec },
+        }
     }
 }

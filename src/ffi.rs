@@ -1,5 +1,3 @@
-use cxx::SharedPtr;
-
 #[cxx::bridge]
 pub mod ffi {
 
@@ -128,6 +126,4 @@ pub mod ffi {
             out: &mut Tf2PointCloud2,
         ) -> Tf2Status;
     }
-
-
 }

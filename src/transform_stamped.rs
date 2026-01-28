@@ -39,6 +39,4 @@ impl TransformStamped {
             rotation: [v.rotation_x, v.rotation_y, v.rotation_z, v.rotation_w],
         }
     }
-
-    
 }

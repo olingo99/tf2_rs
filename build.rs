@@ -15,14 +15,18 @@ fn main() {
         }
     }
 
-    prefixes.push(PathBuf::from("/opt/ros/jazzy"));
+    let ros_distro = match env::var("ROS_DISTRO"){
+        Ok(a) => a,
+        Err(e) => {println!("ROS_DISTRO not defined. Error message: {}", e); return}
+    };
+
+    prefixes.push(PathBuf::from(format!("/opt/ros/{}", ros_distro)));
 
     for prefix in &prefixes {
         let inc = prefix.join("include");
         if inc.exists() {
             b.include(&inc);
 
-            // Add nested include dirs when they exist.
             for pkg in [
                 "tf2",
                 "tf2_ros",

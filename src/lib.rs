@@ -1,18 +1,16 @@
 pub mod buffer;
 pub mod listener;
 
-mod ffi_utils;
-mod ffi;
 mod error;
+mod ffi;
+mod ffi_utils;
 mod time;
-mod transform_stamped;
 mod transform;
-mod registry;
-// mod message_filter;
+mod transform_stamped;
 
 pub use buffer::BufferCore;
-pub use listener::TransformListener;
 pub use error::Tf2Error;
+pub use listener::TransformListener;
 pub use time::LookupTime;
-pub use transform_stamped::TransformStamped;
 pub use transform::{HasHeader, Transformable};
+pub use transform_stamped::TransformStamped;

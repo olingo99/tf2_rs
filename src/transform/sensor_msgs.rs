@@ -1,95 +1,81 @@
+use crate::Tf2Error;
 use crate::TransformStamped;
-use crate::transform::Transformable;
-use crate::{Tf2Error, buffer::BufferCore};
 use crate::ffi::ffi;
-use crate::time::LookupTime;
-use super::{header_from_ffi, header_to_ffi};
 use crate::ffi_utils::call_out;
-
-// pub fn transform_point_stamped_builtin(
-//     buffer: &BufferCore,
-//     input: &geometry_msgs::msg::PointStamped,
-//     target_frame: &str,
-//     when: LookupTime,
-// ) -> Result<geometry_msgs::msg::PointStamped, Tf2Error> {
-//     // Typically you use the message stamp (unless you explicitly choose Latest).
-//     let tf = buffer.lookup_transform(target_frame, &input.header.frame_id, when)?;
-
-//     let ffi_in = ffi::Tf2PointStamped {
-//         header: header_to_ffi(&input.header),
-//         x: input.point.x,
-//         y: input.point.y,
-//         z: input.point.z,
-//     };
-
-//     let ffi_out = ffi::do_transform_point_stamped(&ffi_in, &tf.to_ffi()).map_err(map_cxx_err)?;
-
-//     let mut out = geometry_msgs::msg::PointStamped::default();
-//     out.header = header_from_ffi(ffi_out.header);
-//     out.point.x = ffi_out.x;
-//     out.point.y = ffi_out.y;
-//     out.point.z = ffi_out.z;
-//     Ok(out)
-// }
+use crate::transform::Transformable;
 
 crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::PointCloud2);
 
 impl Transformable for sensor_msgs::msg::PointCloud2 {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
-        let ffi_in = pc2_to_ffi(self);
-        let ffi_out = call_out(|out| {
-            ffi::do_transform_pointcloud2(&ffi_in, &tf.to_ffi(), out)
-        })?;
-        Ok(pc2_from_ffi(ffi_out))
+        let ffi_in: ffi::Tf2PointCloud2 = self.into();
+        let ffi_out = call_out(|out| ffi::do_transform_pointcloud2(&ffi_in, &tf.to_ffi(), out))?;
+        Ok((ffi_out).into())
     }
 }
 
-fn pc2_to_ffi(pc: &sensor_msgs::msg::PointCloud2) -> ffi::Tf2PointCloud2 {
-    ffi::Tf2PointCloud2 {
-        header: ffi::Tf2Header {
-            stamp: ffi::Tf2Time { sec: pc.header.stamp.sec, nanosec: pc.header.stamp.nanosec },
-            frame_id: pc.header.frame_id.clone(),
-        },
-        height: pc.height,
-        width: pc.width,
-        fields: pc.fields.iter().map(|f| ffi::Tf2PointField {
-            name: f.name.clone(),
-            offset: f.offset,
-            datatype: f.datatype,
-            count: f.count,
-        }).collect(),
-        is_bigendian: pc.is_bigendian,
-        point_step: pc.point_step,
-        row_step: pc.row_step,
-        data: pc.data.clone(),
-        is_dense: pc.is_dense,
+impl From<&sensor_msgs::msg::PointCloud2> for ffi::Tf2PointCloud2 {
+    fn from(pc: &sensor_msgs::msg::PointCloud2) -> Self {
+        ffi::Tf2PointCloud2 {
+            header: ffi::Tf2Header {
+                stamp: ffi::Tf2Time {
+                    sec: pc.header.stamp.sec,
+                    nanosec: pc.header.stamp.nanosec,
+                },
+                frame_id: pc.header.frame_id.clone(),
+            },
+            height: pc.height,
+            width: pc.width,
+            fields: pc
+                .fields
+                .iter()
+                .map(|f| ffi::Tf2PointField {
+                    name: f.name.clone(),
+                    offset: f.offset,
+                    datatype: f.datatype,
+                    count: f.count,
+                })
+                .collect(),
+            is_bigendian: pc.is_bigendian,
+            point_step: pc.point_step,
+            row_step: pc.row_step,
+            data: pc.data.clone(),
+            is_dense: pc.is_dense,
+        }
     }
 }
 
-fn pc2_from_ffi(pc: ffi::Tf2PointCloud2) -> sensor_msgs::msg::PointCloud2 {
-    let mut out = sensor_msgs::msg::PointCloud2::default();
-    out.header.stamp.sec = pc.header.stamp.sec;
-    out.header.stamp.nanosec = pc.header.stamp.nanosec;
-    out.header.frame_id = pc.header.frame_id;
+impl From<ffi::Tf2PointCloud2> for sensor_msgs::msg::PointCloud2 {
+    fn from(pc: ffi::Tf2PointCloud2) -> Self {
+        let mut out = sensor_msgs::msg::PointCloud2::default();
+        out.header.stamp.sec = pc.header.stamp.sec;
+        out.header.stamp.nanosec = pc.header.stamp.nanosec;
+        out.header.frame_id = pc.header.frame_id;
 
-    out.height = pc.height;
-    out.width = pc.width;
-    out.fields = pc.fields.into_iter().map(|f| {
-        let mut pf = sensor_msgs::msg::PointField::default();
-        pf.name = f.name;
-        pf.offset = f.offset;
-        pf.datatype = f.datatype;
-        pf.count = f.count;
-        pf
-    }).collect();
+        out.height = pc.height;
+        out.width = pc.width;
+        out.fields = pc
+            .fields
+            .into_iter()
+            .map(|f| {
+                let mut pf = sensor_msgs::msg::PointField::default();
+                pf.name = f.name;
+                pf.offset = f.offset;
+                pf.datatype = f.datatype;
+                pf.count = f.count;
+                pf
+            })
+            .collect();
 
-    out.is_bigendian = pc.is_bigendian;
-    out.point_step = pc.point_step;
-    out.row_step = pc.row_step;
-    out.data = pc.data;
-    out.is_dense = pc.is_dense;
-    out
+        out.is_bigendian = pc.is_bigendian;
+        out.point_step = pc.point_step;
+        out.row_step = pc.row_step;
+        out.data = pc.data;
+        out.is_dense = pc.is_dense;
+        out
+    }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,7 +189,9 @@ mod tests {
         );
 
         let cloud_in = make_xyz_cloud("lidar", &[[1.0, 2.0, 3.0]]);
-        let cloud_out = cloud_in.apply_transform(&tf).expect("transform should succeed");
+        let cloud_out = cloud_in
+            .apply_transform(&tf)
+            .expect("transform should succeed");
 
         // tf2_sensor_msgs does: p_out = p_in; p_out.header = t_in.header;
         // So output header should match the transform header. :contentReference[oaicite:2]{index=2}
@@ -225,7 +213,9 @@ mod tests {
         let tf = make_tf("map", "lidar", [0.0, 0.0, 0.0], [0.0, 0.0, s, s], (0, 0));
 
         let cloud_in = make_xyz_cloud("lidar", &[[1.0, 0.0, 0.0]]);
-        let cloud_out = cloud_in.apply_transform(&tf).expect("transform should succeed");
+        let cloud_out = cloud_in
+            .apply_transform(&tf)
+            .expect("transform should succeed");
 
         let pts = read_xyz_cloud(&cloud_out);
         assert_eq!(pts.len(), 1);
@@ -238,7 +228,13 @@ mod tests {
 
     #[test]
     fn transform_pointcloud2_missing_xyz_fields_returns_err() {
-        let tf = make_tf("map", "lidar", [0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0], (0, 0));
+        let tf = make_tf(
+            "map",
+            "lidar",
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            (0, 0),
+        );
 
         // Malformed cloud: no fields at all, but has 12 bytes of data.
         let mut cloud = sensor_msgs::msg::PointCloud2::default();
@@ -253,7 +249,10 @@ mod tests {
 
         let res = cloud.apply_transform(&tf);
         assert!(
-            matches!(res, Err(crate::Tf2Error::InvalidArgument(_)) | Err(crate::Tf2Error::Other(_))),
+            matches!(
+                res,
+                Err(crate::Tf2Error::InvalidArgument(_)) | Err(crate::Tf2Error::Other(_))
+            ),
             "expected an error for malformed PointCloud2, got: {res:?}"
         );
     }

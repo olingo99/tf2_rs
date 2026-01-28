@@ -1,12 +1,10 @@
 #include "tf2_wrapper.h"
 
-// cxx-generated header for shared structs (Tf2Time, Tf2TransformStamped, Tf2PointCloud2, etc.)
 #include "tf2_rs/src/ffi.rs.h"
 
 #include <chrono>
 #include <string>
 
-// geometry_msgs include path differs across distros; handle both.
 #if __has_include(<geometry_msgs/msg/transform_stamped.hpp>)
   #include <geometry_msgs/msg/transform_stamped.hpp>
   #include <geometry_msgs/msg/point_stamped.hpp>
@@ -17,14 +15,12 @@
   #include <geometry_msgs/geometry_msgs/msg/pose_stamped.hpp>
 #endif
 
-// std_msgs include path differs across distros; handle both.
 #if __has_include(<std_msgs/msg/header.hpp>)
   #include <std_msgs/msg/header.hpp>
 #else
   #include <std_msgs/std_msgs/msg/header.hpp>
 #endif
 
-// sensor_msgs include path differs across distros; handle both.
 #if __has_include(<sensor_msgs/msg/point_cloud2.hpp>)
   #include <sensor_msgs/msg/point_cloud2.hpp>
   #include <sensor_msgs/msg/point_field.hpp>
@@ -197,7 +193,6 @@ Tf2Status BufferCoreWrapper::can_transform(
   }
 
   if (!out_ok && !err.empty()) {
-    // Optional: carry diagnostics without making it an error
     return status(Tf2Errc::Ok, err);
   }
   return ok();

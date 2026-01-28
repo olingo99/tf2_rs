@@ -1,10 +1,9 @@
-use crate::error::{Tf2Error, check_status};
+use crate::error::Tf2Error;
 use crate::ffi::ffi::{self, BufferCoreWrapper};
-use crate::ffi_utils::{call_bool, call_out, call_bool_with_diag};
+use crate::ffi_utils::{call_bool, call_bool_with_diag, call_out};
 use crate::time::{LookupTime, TimeSpec};
 use crate::transform::Transformable;
 use crate::transform_stamped::TransformStamped;
-use crate::ffi::ffi::{Tf2Errc, Tf2Status};
 
 #[derive(Clone)]
 pub struct BufferCore {
@@ -52,7 +51,7 @@ impl BufferCore {
         source_frame: &str,
         when: LookupTime,
     ) -> Result<bool, Tf2Error> {
-        let t = when.to_ffi();
+        let t = ffi::Tf2Time::from(when);
         call_bool(|out_ok| {
             self.wrapper()
                 .can_transform(target_frame, source_frame, &t, out_ok)
@@ -65,8 +64,11 @@ impl BufferCore {
         source_frame: &str,
         when: LookupTime,
     ) -> Result<(bool, Option<String>), Tf2Error> {
-        let t = when.to_ffi();
-        call_bool_with_diag(|out_ok| self.wrapper().can_transform(target_frame, source_frame, &t, out_ok))
+        let t = ffi::Tf2Time::from(when);
+        call_bool_with_diag(|out_ok| {
+            self.wrapper()
+                .can_transform(target_frame, source_frame, &t, out_ok)
+        })
     }
 
     pub fn lookup_transform(
@@ -75,7 +77,7 @@ impl BufferCore {
         source_frame: &str,
         when: LookupTime,
     ) -> Result<TransformStamped, Tf2Error> {
-        let t = when.to_ffi();
+        let t = ffi::Tf2Time::from(when);
         let ffi_tf = call_out(|out| {
             self.wrapper()
                 .lookup_transform(target_frame, source_frame, &t, out)
@@ -103,7 +105,7 @@ impl BufferCore {
         mut on_err: impl FnMut(Tf2Error),
     ) {
         for t in msg.transforms {
-            let tf = crate::transform::geometry_msgs::convert_transform_stamped(&t);
+            let tf = (&t).into();
             if let Err(e) = self.set_transform(&tf, authority, is_static) {
                 on_err(e);
             }
