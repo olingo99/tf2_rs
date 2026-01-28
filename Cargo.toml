@@ -2,6 +2,11 @@
 name = "tf2_rs"
 version = "0.1.0"
 edition = "2024"
+description = "ROS 2 TF2 bindings for Rust using cxx and rclrs"
+license = "MIT"
+readme = "README"
+keywords = ["ros2", "tf2", "robotics", "transform"]
+categories = ["science::robotics"]
 
 [lib]
 name = "tf2_rs"
@@ -11,10 +16,10 @@ crate-type = ["rlib"]
 cxx = "1"
 thiserror = "1"
 rclrs = "0.7"
-geometry_msgs = "*"
-tf2_msgs = "*"
-sensor_msgs = "*"
-std_msgs = "*"
+geometry_msgs = "5.3.6"
+tf2_msgs = "0.45.6"
+sensor_msgs = "5.3.6"
+std_msgs = "5.3.6"
 
 [build-dependencies]
 cxx-build = "1"

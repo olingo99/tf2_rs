@@ -5,6 +5,10 @@ use crate::time::{LookupTime, TimeSpec};
 use crate::transform::Transformable;
 use crate::transform_stamped::TransformStamped;
 
+
+unsafe impl Send for BufferCoreWrapper {}
+unsafe impl Sync for BufferCoreWrapper {}
+
 #[derive(Clone)]
 pub struct BufferCore {
     inner: cxx::SharedPtr<BufferCoreWrapper>,
@@ -21,12 +25,12 @@ impl BufferCore {
         self.inner.as_ref().expect("BufferCoreWrapper is null")
     }
 
-    pub fn clear(&self) {
+    pub fn clear(&mut self) {
         self.wrapper().clear();
     }
 
     pub fn set_transform(
-        &self,
+        &mut self,
         tf: &TransformStamped,
         authority: &str,
         is_static: bool,
@@ -98,7 +102,7 @@ impl BufferCore {
     }
 
     pub fn ingest_tf_message(
-        &self,
+        &mut self,
         msg: tf2_msgs::msg::TFMessage,
         authority: &str,
         is_static: bool,
@@ -113,5 +117,4 @@ impl BufferCore {
     }
 }
 
-unsafe impl Send for BufferCore {}
-unsafe impl Sync for BufferCore {}
+

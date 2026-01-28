@@ -9,15 +9,22 @@ fn main() {
     // Collect include/lib paths from AMENT_PREFIX_PATH (overlay workspaces) + default ROS prefix.
     let mut prefixes: Vec<PathBuf> = Vec::new();
 
+    println!("cargo:rerun-if-env-changed=AMENT_PREFIX_PATH");
     if let Ok(ament) = env::var("AMENT_PREFIX_PATH") {
         for p in ament.split(':').filter(|s| !s.is_empty()) {
             prefixes.push(PathBuf::from(p));
         }
     }
 
-    let ros_distro = match env::var("ROS_DISTRO"){
+    println!("cargo:rerun-if-env-changed=ROS_DISTRO");
+    let ros_distro = match env::var("ROS_DISTRO") {
         Ok(a) => a,
-        Err(e) => {println!("ROS_DISTRO not defined. Error message: {}", e); return}
+        Err(e) => {
+            panic!(
+                "ROS_DISTRO not defined (source your ROS 2 setup). Error: {}",
+                e
+            )
+        }
     };
 
     prefixes.push(PathBuf::from(format!("/opt/ros/{}", ros_distro)));
@@ -82,13 +89,6 @@ fn main() {
 
     // Core TF2
     println!("cargo:rustc-link-lib=tf2");
-
-    // doTransform specializations live here
-    // println!("cargo:rustc-link-lib=tf2_geometry_msgs");
-    // println!("cargo:rustc-link-lib=tf2_sensor_msgs");
-    // println!("cargo:rustc-link-lib=tf2_ros");
-    // println!("cargo:rustc-link-lib=rclcpp");
-
 
     println!("cargo:rerun-if-changed=src/ffi.rs");
     println!("cargo:rerun-if-changed=src/tf2_wrapper.cpp");

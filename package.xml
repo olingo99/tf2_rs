@@ -1,9 +1,9 @@
 <package format="3">
   <name>tf2_rs</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <version>0.1.0</version>
+  <description>ROS 2 TF2 bindings for Rust using cxx</description>
   <maintainer email="user@todo.todo">user</maintainer>
-  <license>TODO: License declaration</license>
+  <license>MIT</license>
 
   <depend>rclrs</depend>
   <depend>std_msgs</depend>
