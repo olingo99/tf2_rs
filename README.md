@@ -94,7 +94,8 @@ impl PointcloudTfNode {
 
         let buffer_cb = buffer.clone();
         let pub_cb = publisher.clone();
-        let sub = node.create_subscription("cloud_in", move |msg: Pointcloud| Self::cb(msg, &buffer_cb, &pub_cb))?;
+        let logger_cb = node.logger().clone();
+        let sub = node.create_subscription("cloud_in", move |msg: Pointcloud| Self::cb(msg, &buffer_cb, &pub_cb, &logger_cb))?;
 
 
         Ok(PointcloudTfNode
@@ -107,10 +108,15 @@ impl PointcloudTfNode {
         })
     }
 
-    fn cb(msg: Pointcloud, buffer: &BufferCore,  publisher: &Publisher<Pointcloud>){
+    fn cb(msg: Pointcloud, buffer: &BufferCore,  publisher: &Publisher<Pointcloud>, logger: &Logger){
         let target_frame = "base_link";
 
-        let tf = buffer.lookup_transform(target_frame, &msg.header.frame_id, LookupTime::Latest).unwrap();
+        let tf = match buffer.lookup_transform(target_frame, &msg.header.frame_id, LookupTime::Latest){
+            Ok(t) => t,
+            Err(e) => {log_error!(logger, "Error in lookup transform: {}", e); return}
+        };
+
+
 
         let out = match msg.apply_transform(&tf) {
             Ok(o) => {println!("got good transform"); o},
