@@ -45,7 +45,7 @@ Basic TF2 lookup:
 use tf2_rs::{BufferCore, LookupTime, Tf2Error, TransformStamped};
 
 fn main() -> Result<(), Tf2Error> {
-    let buffer = BufferCore::new(10_000_000_000); // 10s cache
+    let buffer = BufferCore::new(std::time::Duration::new(10, 0));
     let _ = buffer.set_transform(&TransformStamped{
         stamp_nanosec:1,
         stamp_sec:1,
@@ -88,7 +88,7 @@ impl PointcloudTfNode {
 
         let node = executor.create_node("tf_example")?;
 
-        let buffer = BufferCore::new(10_000_000_000);
+        let buffer = BufferCore::new(std::time::Duration::new(10, 0));
         let listener = TransformListener::new(&node, buffer.clone())?;
         let publisher = node.create_publisher("/cloud_out")?;
 

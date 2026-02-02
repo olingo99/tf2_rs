@@ -15,9 +15,9 @@ pub struct BufferCore {
 }
 
 impl BufferCore {
-    pub fn new(cache_time_ns: u64) -> Self {
+    pub fn new(cache_time_ns: std::time::Duration) -> Self {
         Self {
-            inner: ffi::new_buffer_core(cache_time_ns),
+            inner: ffi::new_buffer_core(cache_time_ns.as_nanos() as u64),
         }
     }
 
