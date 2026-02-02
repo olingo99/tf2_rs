@@ -40,3 +40,51 @@ impl TransformStamped {
         }
     }
 }
+
+
+impl From<TransformStamped> for geometry_msgs::msg::TransformStamped {
+    fn from(t: TransformStamped) -> Self {
+        let mut msg = geometry_msgs::msg::TransformStamped::default();
+
+        msg.header.stamp.sec = t.stamp_sec;
+        msg.header.stamp.nanosec = t.stamp_nanosec;
+        msg.header.frame_id = t.parent_frame;
+
+        msg.child_frame_id = t.child_frame;
+
+        msg.transform.translation.x = t.translation[0];
+        msg.transform.translation.y = t.translation[1];
+        msg.transform.translation.z = t.translation[2];
+
+        msg.transform.rotation.x = t.rotation[0];
+        msg.transform.rotation.y = t.rotation[1];
+        msg.transform.rotation.z = t.rotation[2];
+        msg.transform.rotation.w = t.rotation[3];
+
+        msg
+    }
+}
+
+
+impl From<&TransformStamped> for geometry_msgs::msg::TransformStamped {
+    fn from(t: &TransformStamped) -> Self {
+        let mut msg = geometry_msgs::msg::TransformStamped::default();
+
+        msg.header.stamp.sec = t.stamp_sec;
+        msg.header.stamp.nanosec = t.stamp_nanosec;
+        msg.header.frame_id = t.parent_frame.clone();
+
+        msg.child_frame_id = t.child_frame.clone();
+
+        msg.transform.translation.x = t.translation[0];
+        msg.transform.translation.y = t.translation[1];
+        msg.transform.translation.z = t.translation[2];
+
+        msg.transform.rotation.x = t.rotation[0];
+        msg.transform.rotation.y = t.rotation[1];
+        msg.transform.rotation.z = t.rotation[2];
+        msg.transform.rotation.w = t.rotation[3];
+
+        msg
+    }
+}
