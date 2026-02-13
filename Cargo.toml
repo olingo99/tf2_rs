@@ -16,10 +16,10 @@ crate-type = ["rlib"]
 cxx = "1"
 thiserror = "1"
 rclrs = "0.7"
-geometry_msgs = "5.3.6"
-tf2_msgs = "0.45.6"
-sensor_msgs = "5.3.6"
-std_msgs = "5.3.6"
+geometry_msgs = "*"
+tf2_msgs = "*"
+sensor_msgs = "*"
+std_msgs = "*"
 
 [build-dependencies]
 cxx-build = "1"
