@@ -69,15 +69,17 @@ fn main() {
         }
     }
 
-
-    for p in ["/usr/include/eigen3", "/usr/local/include/eigen3", "/usr/include"] {
+    for p in [
+        "/usr/include/eigen3",
+        "/usr/local/include/eigen3",
+        "/usr/include",
+    ] {
         if std::path::Path::new(p).exists() {
             b.include(p);
         }
     }
 
     b.compile("tf2_rs_tf2_wrapper");
-
 
     // Link search paths
     for prefix in &prefixes {
