@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "ROS 2 TF2 bindings for Rust using cxx and rclrs"
 license = "MIT"
-readme = "README"
+readme = "README.md"
 keywords = ["ros2", "tf2", "robotics", "transform"]
 categories = ["science::robotics"]
 
