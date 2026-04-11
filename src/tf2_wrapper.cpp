@@ -153,51 +153,30 @@ Tf2Status BufferCoreWrapper::set_transform(
   });
 }
 
-
 Tf2Status BufferCoreWrapper::can_transform(
     rust::Str target_frame,
     rust::Str source_frame,
     const Tf2Time& time,
-    bool& out_ok) const
+    Tf2CanTransformResult& out) const
 {
-  const auto tp = to_timepoint(time);
+  out.available = false;
+  out.diagnostic = "";
 
-  std::string err;
-  try {
-    out_ok = buffer_.canTransform(
+  return with_tf2_status([&] {
+    const auto tp = to_timepoint(time);
+
+    std::string err;
+    out.available = buffer_.canTransform(
         std::string(target_frame),
         std::string(source_frame),
         tp,
         &err);
-  } catch (const tf2::LookupException& e) {
-    out_ok = false;
-    return status(Tf2Errc::Lookup, e.what());
-  } catch (const tf2::ConnectivityException& e) {
-    out_ok = false;
-    return status(Tf2Errc::Connectivity, e.what());
-  } catch (const tf2::ExtrapolationException& e) {
-    out_ok = false;
-    return status(Tf2Errc::Extrapolation, e.what());
-  } catch (const tf2::InvalidArgumentException& e) {
-    out_ok = false;
-    return status(Tf2Errc::InvalidArgument, e.what());
-  } catch (const tf2::TransformException& e) {
-    out_ok = false;
-    return status(Tf2Errc::Other, e.what());
-  } catch (const std::exception& e) {
-    out_ok = false;
-    return status(Tf2Errc::Other, e.what());
-  } catch (...) {
-    out_ok = false;
-    return status(Tf2Errc::Other, "unknown exception");
-  }
 
-  if (!out_ok && !err.empty()) {
-    return status(Tf2Errc::Ok, err);
-  }
-  return ok();
+    if (!out.available) {
+      out.diagnostic = std::move(err);
+    }
+  });
 }
-
 
 Tf2Status BufferCoreWrapper::lookup_transform(
     rust::Str target_frame,

@@ -1,6 +1,6 @@
 use crate::error::Tf2Error;
 use crate::ffi::ffi::{self, BufferCoreWrapper};
-use crate::ffi_utils::{call_bool, call_bool_with_diag, call_out};
+use crate::ffi_utils::{call_bool, call_out};
 use crate::time::{LookupTime, TimeSpec};
 use crate::transform::Transformable;
 use crate::transform_stamped::TransformStamped;
@@ -49,31 +49,38 @@ impl BufferCore {
         }
     }
 
+    pub fn check_transform(
+        &self,
+        target_frame: &str,
+        source_frame: &str,
+        when: LookupTime,
+    ) -> Result<TransformAvailability, Tf2Error> {
+        let t = ffi::Tf2Time::from(when);
+        let out = call_out(|out| {
+            self.wrapper()
+                .can_transform(target_frame, source_frame, &t, out)
+        })?;
+
+        Ok(if out.available {
+            TransformAvailability::Available
+        } else {
+            TransformAvailability::Unavailable {
+                diagnostic: (!out.diagnostic.is_empty()).then_some(out.diagnostic),
+            }
+        })
+    }
+
     pub fn can_transform(
         &self,
         target_frame: &str,
         source_frame: &str,
         when: LookupTime,
     ) -> Result<bool, Tf2Error> {
-        let t = ffi::Tf2Time::from(when);
-        call_bool(|out_ok| {
-            self.wrapper()
-                .can_transform(target_frame, source_frame, &t, out_ok)
-        })
+        Ok(self
+            .check_transform(target_frame, source_frame, when)?
+            .is_available())
     }
 
-    pub fn can_transform_with_diagnostic(
-        &self,
-        target_frame: &str,
-        source_frame: &str,
-        when: LookupTime,
-    ) -> Result<(bool, Option<String>), Tf2Error> {
-        let t = ffi::Tf2Time::from(when);
-        call_bool_with_diag(|out_ok| {
-            self.wrapper()
-                .can_transform(target_frame, source_frame, &t, out_ok)
-        })
-    }
 
     pub fn lookup_transform(
         &self,
@@ -117,4 +124,22 @@ impl BufferCore {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TransformAvailability {
+    Available,
+    Unavailable { diagnostic: Option<String> },
+}
+
+impl TransformAvailability {
+    pub fn is_available(&self) -> bool {
+        matches!(self, Self::Available)
+    }
+
+    pub fn diagnostic(&self) -> Option<&str> {
+        match self {
+            Self::Available => None,
+            Self::Unavailable { diagnostic } => diagnostic.as_deref(),
+        }
+    }
+}
 

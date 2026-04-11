@@ -20,6 +20,12 @@ pub mod ffi {
     }
 
     #[derive(Clone, Debug, Default)]
+    struct Tf2CanTransformResult {
+        available: bool,
+        diagnostic: String,
+    }
+
+    #[derive(Clone, Debug, Default)]
     struct Tf2Time {
         sec: i32,
         nanosec: u32,
@@ -109,7 +115,7 @@ pub mod ffi {
             target_frame: &str,
             source_frame: &str,
             time: &Tf2Time,
-            out_ok: &mut bool,
+            out: &mut Tf2CanTransformResult,
         ) -> Tf2Status;
 
         fn set_transform(

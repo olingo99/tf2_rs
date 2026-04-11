@@ -26,6 +26,7 @@ struct Tf2PointCloud2;
 // New: forward declarations for status/error code (defined in cxx-generated header)
 enum class Tf2Errc : int32_t;
 struct Tf2Status;
+struct Tf2CanTransformResult;
 
 class BufferCoreWrapper {
 public:
@@ -40,12 +41,13 @@ public:
       bool is_static,
       bool& out_ok) const;
 
-  // Now returns a status; boolean answer is written to out_ok
+  // Returns wrapper status for exceptional failures only.
+  // The normal canTransform probe result is written to `out`.
   Tf2Status can_transform(
       rust::Str target_frame,
       rust::Str source_frame,
       const Tf2Time& time,
-      bool& out_ok) const;
+      Tf2CanTransformResult& out) const;
 
   // Now returns a status; transform is written to out_tf
   Tf2Status lookup_transform(
