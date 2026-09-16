@@ -42,9 +42,9 @@ impl TransformStamped {
 }
 
 
-impl From<TransformStamped> for geometry_msgs::msg::TransformStamped {
+impl From<TransformStamped> for ros_env::geometry_msgs::msg::TransformStamped {
     fn from(t: TransformStamped) -> Self {
-        let mut msg = geometry_msgs::msg::TransformStamped::default();
+        let mut msg = ros_env::geometry_msgs::msg::TransformStamped::default();
 
         msg.header.stamp.sec = t.stamp_sec;
         msg.header.stamp.nanosec = t.stamp_nanosec;
@@ -66,9 +66,9 @@ impl From<TransformStamped> for geometry_msgs::msg::TransformStamped {
 }
 
 
-impl From<&TransformStamped> for geometry_msgs::msg::TransformStamped {
+impl From<&TransformStamped> for ros_env::geometry_msgs::msg::TransformStamped {
     fn from(t: &TransformStamped) -> Self {
-        let mut msg = geometry_msgs::msg::TransformStamped::default();
+        let mut msg = ros_env::geometry_msgs::msg::TransformStamped::default();
 
         msg.header.stamp.sec = t.stamp_sec;
         msg.header.stamp.nanosec = t.stamp_nanosec;

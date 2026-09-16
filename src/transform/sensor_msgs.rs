@@ -4,9 +4,9 @@ use crate::ffi::ffi;
 use crate::ffi_utils::call_out;
 use crate::transform::Transformable;
 
-crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::PointCloud2);
+crate::impl_has_header_for_ros2_msg!(ros_env::sensor_msgs::msg::PointCloud2);
 
-impl Transformable for sensor_msgs::msg::PointCloud2 {
+impl Transformable for ros_env::sensor_msgs::msg::PointCloud2 {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
         let ffi_in: ffi::Tf2PointCloud2 = self.into();
         let ffi_out = call_out(|out| ffi::do_transform_pointcloud2(&ffi_in, &tf.to_ffi(), out))?;
@@ -14,8 +14,8 @@ impl Transformable for sensor_msgs::msg::PointCloud2 {
     }
 }
 
-impl From<&sensor_msgs::msg::PointCloud2> for ffi::Tf2PointCloud2 {
-    fn from(pc: &sensor_msgs::msg::PointCloud2) -> Self {
+impl From<&ros_env::sensor_msgs::msg::PointCloud2> for ffi::Tf2PointCloud2 {
+    fn from(pc: &ros_env::sensor_msgs::msg::PointCloud2) -> Self {
         ffi::Tf2PointCloud2 {
             header: ffi::Tf2Header {
                 stamp: ffi::Tf2Time {
@@ -45,9 +45,9 @@ impl From<&sensor_msgs::msg::PointCloud2> for ffi::Tf2PointCloud2 {
     }
 }
 
-impl From<ffi::Tf2PointCloud2> for sensor_msgs::msg::PointCloud2 {
+impl From<ffi::Tf2PointCloud2> for ros_env::sensor_msgs::msg::PointCloud2 {
     fn from(pc: ffi::Tf2PointCloud2) -> Self {
-        let mut out = sensor_msgs::msg::PointCloud2::default();
+        let mut out = ros_env::sensor_msgs::msg::PointCloud2::default();
         out.header.stamp.sec = pc.header.stamp.sec;
         out.header.stamp.nanosec = pc.header.stamp.nanosec;
         out.header.frame_id = pc.header.frame_id;
@@ -58,7 +58,7 @@ impl From<ffi::Tf2PointCloud2> for sensor_msgs::msg::PointCloud2 {
             .fields
             .into_iter()
             .map(|f| {
-                let mut pf = sensor_msgs::msg::PointField::default();
+                let mut pf = ros_env::sensor_msgs::msg::PointField::default();
                 pf.name = f.name;
                 pf.offset = f.offset;
                 pf.datatype = f.datatype;
@@ -112,8 +112,8 @@ mod tests {
         crate::TransformStamped::from_ffi(raw)
     }
 
-    fn make_xyz_cloud(frame: &str, points: &[[f32; 3]]) -> sensor_msgs::msg::PointCloud2 {
-        let mut cloud = sensor_msgs::msg::PointCloud2::default();
+    fn make_xyz_cloud(frame: &str, points: &[[f32; 3]]) -> ros_env::sensor_msgs::msg::PointCloud2 {
+        let mut cloud = ros_env::sensor_msgs::msg::PointCloud2::default();
 
         cloud.header.frame_id = frame.to_string();
         cloud.header.stamp.sec = 0;
@@ -124,19 +124,19 @@ mod tests {
         cloud.is_bigendian = false;
         cloud.is_dense = true;
 
-        let mut x = sensor_msgs::msg::PointField::default();
+        let mut x = ros_env::sensor_msgs::msg::PointField::default();
         x.name = "x".to_string();
         x.offset = 0;
         x.datatype = PF_FLOAT32;
         x.count = 1;
 
-        let mut y = sensor_msgs::msg::PointField::default();
+        let mut y = ros_env::sensor_msgs::msg::PointField::default();
         y.name = "y".to_string();
         y.offset = 4;
         y.datatype = PF_FLOAT32;
         y.count = 1;
 
-        let mut z = sensor_msgs::msg::PointField::default();
+        let mut z = ros_env::sensor_msgs::msg::PointField::default();
         z.name = "z".to_string();
         z.offset = 8;
         z.datatype = PF_FLOAT32;
@@ -157,7 +157,7 @@ mod tests {
         cloud
     }
 
-    fn read_xyz_cloud(cloud: &sensor_msgs::msg::PointCloud2) -> Vec<[f32; 3]> {
+    fn read_xyz_cloud(cloud: &ros_env::sensor_msgs::msg::PointCloud2) -> Vec<[f32; 3]> {
         assert_eq!(cloud.point_step, 12, "test helper assumes point_step=12");
         cloud
             .data
@@ -237,7 +237,7 @@ mod tests {
         );
 
         // Malformed cloud: no fields at all, but has 12 bytes of data.
-        let mut cloud = sensor_msgs::msg::PointCloud2::default();
+        let mut cloud = ros_env::sensor_msgs::msg::PointCloud2::default();
         cloud.header.frame_id = "lidar".to_string();
         cloud.height = 1;
         cloud.width = 1;

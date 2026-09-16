@@ -110,7 +110,7 @@ impl BufferCore {
 
     pub fn ingest_tf_message(
         &mut self,
-        msg: tf2_msgs::msg::TFMessage,
+        msg: ros_env::tf2_msgs::msg::TFMessage,
         authority: &str,
         is_static: bool,
         mut on_err: impl FnMut(Tf2Error),

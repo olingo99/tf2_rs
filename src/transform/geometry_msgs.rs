@@ -1,7 +1,7 @@
 use crate::transform_stamped::TransformStamped;
 
-impl From<&geometry_msgs::msg::TransformStamped> for TransformStamped {
-    fn from(t: &geometry_msgs::msg::TransformStamped) -> Self {
+impl From<&ros_env::geometry_msgs::msg::TransformStamped> for TransformStamped {
+    fn from(t: &ros_env::geometry_msgs::msg::TransformStamped) -> Self {
         TransformStamped {
             stamp_sec: t.header.stamp.sec,
             stamp_nanosec: t.header.stamp.nanosec,

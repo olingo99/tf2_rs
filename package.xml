@@ -6,11 +6,8 @@
   <license>MIT</license>
 
   <depend>rclrs</depend>
-  <depend>std_msgs</depend>
-  <depend>sensor_msgs</depend>
-  <depend>geometry_msgs</depend>
-  <depend>tf2_msgs</depend>
-
+  <depend>rosidl_runtime_rs</depend>
+  <depend>orocos-kdl</depend>
 
 
   <export>

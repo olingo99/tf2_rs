@@ -4,6 +4,7 @@ fn main() {
     let mut b = cxx_build::bridge("src/ffi.rs");
     b.file("src/tf2_wrapper.cpp")
         .include("include")
+        .std("c++17")
         .flag_if_supported("-std=c++17");
 
     // Collect include/lib paths from AMENT_PREFIX_PATH (overlay workspaces) + default ROS prefix.
@@ -11,7 +12,8 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=AMENT_PREFIX_PATH");
     if let Ok(ament) = env::var("AMENT_PREFIX_PATH") {
-        for p in ament.split(':').filter(|s| !s.is_empty()) {
+        let separator = if cfg!(windows) { ';' } else { ':' };
+        for p in ament.split(separator).filter(|s| !s.is_empty()) {
             prefixes.push(PathBuf::from(p));
         }
     }
@@ -61,6 +63,7 @@ fn main() {
                 "libstatistics_collector",
                 "statistics_msgs",
                 "rosidl_typesupport_introspection_cpp",
+                "eigen3",
             ] {
                 let nested = inc.join(pkg);
                 if nested.exists() {
@@ -92,6 +95,7 @@ fn main() {
 
     // Core TF2
     println!("cargo:rustc-link-lib=tf2");
+    println!("cargo:rustc-link-lib=orocos-kdl");
 
     println!("cargo:rerun-if-changed=src/ffi.rs");
     println!("cargo:rerun-if-changed=src/tf2_wrapper.cpp");
