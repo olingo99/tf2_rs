@@ -2,11 +2,15 @@
 name = "tf2_rs"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
 description = "ROS 2 TF2 bindings for Rust using cxx and rclrs"
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/olingo99/tf2_rs"
+documentation = "https://olingo99.github.io/tf2_rs/"
 keywords = ["ros2", "tf2", "robotics", "transform"]
 categories = ["science::robotics"]
+exclude = [".github/", "docker/", ".dockerignore"]
 
 [lib]
 name = "tf2_rs"

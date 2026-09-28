@@ -1,5 +1,9 @@
 # tf2_rs
 
+[![CI](https://github.com/olingo99/tf2_rs/actions/workflows/ci.yml/badge.svg)](https://github.com/olingo99/tf2_rs/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/tf2_rs.svg)](https://crates.io/crates/tf2_rs)
+[![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://olingo99.github.io/tf2_rs/)
+
 `tf2_rs` provides Rust bindings for a focused subset of ROS 2 TF2. It wraps
 `tf2::BufferCore` through `cxx`, integrates with `rclrs`, and exposes Rust-first
 types for transform lookup, listening, broadcasting, and `PointCloud2`
@@ -43,7 +47,7 @@ from `source` in `target`.
 ## Requirements
 
 - ROS 2 installed locally and sourceable from `/opt/ros/<distro>/setup.bash`
-- Rust 1.85 or newer
+- Rust 1.88 or newer
 - `cargo`, `colcon`, `rosdep`, and a C++17-capable compiler
 - `rosidl_generator_rs` and the generated Rust interfaces from the selected
   ROS installation
@@ -54,32 +58,53 @@ sourced before building, the crate will fail to compile.
 
 ## Installation
 
-### Recommended workflow
+### From crates.io (recommended)
 
-Current ROS binary installations from Humble through Rolling contain the Rust
-generator and generated interfaces needed by `ros-env`. Add this package under
-`src/`; no source message repositories or `geometry2` checkout are required.
+In your own `ament_cargo` package, add `tf2_rs` next to the `rclrs` and
+`ros-env` versions it is built against:
+
+```toml
+[dependencies]
+tf2_rs = "0.1"
+rclrs = "0.8"
+ros-env = "0.3"
+```
+
+`tf2_rs` compiles a small C++ wrapper against the TF2 headers of your ROS
+installation, so your `package.xml` also needs the packages it uses:
+
+```xml
+<depend>geometry_msgs</depend>
+<depend>sensor_msgs</depend>
+<depend>std_msgs</depend>
+<depend>tf2</depend>
+<depend>tf2_geometry_msgs</depend>
+<depend>tf2_msgs</depend>
+<depend>tf2_sensor_msgs</depend>
+```
+
+Then build your workspace as usual from a sourced shell:
 
 ```bash
 source /opt/ros/<distro>/setup.bash
-colcon build --symlink-install --packages-up-to tf2_rs
-source install/setup.bash
+rosdep install --from-paths src --ignore-src -r -y
+colcon build
 ```
 
-### Minimal workspace
+API documentation is published at <https://olingo99.github.io/tf2_rs/>.
+docs.rs cannot build this crate because it needs a ROS installation.
 
-For example, on Jazzy:
+### From source
+
+Current ROS binary installations from Humble through Rolling contain the Rust
+generator and generated interfaces needed by `ros-env`, so no source message
+repositories or `geometry2` checkout are required. For example, on Jazzy:
 
 ```bash
 mkdir -p ~/tf2_rs_ws/src
 cd ~/tf2_rs_ws/src
-
 git clone https://github.com/olingo99/tf2_rs.git tf2_rs
-```
 
-Install system dependencies and build the crate:
-
-```bash
 cd ~/tf2_rs_ws
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
@@ -87,11 +112,15 @@ colcon build --symlink-install --packages-up-to tf2_rs
 source install/setup.bash
 ```
 
-A Docker build for any supported distribution is available from the repository
-root:
+### With Docker
+
+`docker/Dockerfile` builds the repository against any supported distribution
+without installing ROS or Rust locally. From the repository root:
 
 ```bash
-docker build -f docker/Dockerfile --build-arg ROS_DISTRO=jazzy .
+docker build -f docker/Dockerfile --build-arg ROS_DISTRO=jazzy -t tf2_rs:jazzy .
+docker run --rm tf2_rs:jazzy \
+  bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo test'
 ```
 
 ## Usage
@@ -134,7 +163,7 @@ be kept alive for as long as you want TF updates.
 ```rust
 use std::time::Duration;
 
-use rclrs::{Context, RclrsError, SpinOptions};
+use rclrs::{Context, CreateBasicExecutor, RclrsError, RclrsErrorFilter, SpinOptions};
 use ros_env::sensor_msgs::msg::PointCloud2;
 use tf2_rs::{BufferCore, TimeSpec, TransformListener};
 
@@ -189,6 +218,9 @@ work, please cite:
 ## Contributing
 
 Issues and PRs are welcome.
+
+CI builds and tests every push and pull request on Humble, Jazzy, Kilted,
+Lyrical and Rolling. Releases are described in [`RELEASING.md`](RELEASING.md).
 
 ## License
 

@@ -1,0 +1,40 @@
+# Early warning for upcoming rclrs releases: builds tf2_rs against the main
+# branch of ros2_rust instead of the crates.io release. A failure here does not
+# block anything; it means tf2_rs will need changes for the next rclrs release.
+name: rclrs main
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy, kilted, lyrical, rolling]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use rclrs from ros2_rust main
+        run: |
+          sed -i 's|^rclrs = .*|rclrs = { git = "https://github.com/ros2-rust/ros2_rust.git" }|' Cargo.toml
+          grep -F 'rclrs = { git = "https://github.com/ros2-rust/ros2_rust.git" }' Cargo.toml
+          cargo update -p rclrs
+
+      - name: Build
+        run: >
+          docker build -f docker/Dockerfile
+          --build-arg ROS_DISTRO=${{ matrix.distro }}
+          -t tf2_rs:${{ matrix.distro }} .
+
+      - name: Test
+        run: >
+          docker run --rm tf2_rs:${{ matrix.distro }}
+          bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo tree -p rclrs && cargo test --locked'

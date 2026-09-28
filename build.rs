@@ -20,14 +20,11 @@ fn main() {
     let ros_distro = match env::var("ROS_DISTRO") {
         Ok(a) => a,
         Err(e) => {
-            panic!(
-                "ROS_DISTRO not defined (source your ROS 2 setup). Error: {}",
-                e
-            )
+            panic!("ROS_DISTRO not defined (source your ROS 2 setup). Error: {e}")
         }
     };
 
-    prefixes.push(PathBuf::from(format!("/opt/ros/{}", ros_distro)));
+    prefixes.push(PathBuf::from(format!("/opt/ros/{ros_distro}")));
 
     for prefix in &prefixes {
         let inc = prefix.join("include");

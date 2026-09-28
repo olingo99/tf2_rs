@@ -42,7 +42,6 @@ impl TransformStamped {
     }
 }
 
-
 impl From<TransformStamped> for geometry_msgs::msg::TransformStamped {
     fn from(t: TransformStamped) -> Self {
         let mut msg = geometry_msgs::msg::TransformStamped::default();
@@ -65,7 +64,6 @@ impl From<TransformStamped> for geometry_msgs::msg::TransformStamped {
         msg
     }
 }
-
 
 impl From<&TransformStamped> for geometry_msgs::msg::TransformStamped {
     fn from(t: &TransformStamped) -> Self {

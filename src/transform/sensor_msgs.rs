@@ -58,13 +58,11 @@ impl From<ffi::Tf2PointCloud2> for sensor_msgs::msg::PointCloud2 {
         out.fields = pc
             .fields
             .into_iter()
-            .map(|f| {
-                let mut pf = sensor_msgs::msg::PointField::default();
-                pf.name = f.name;
-                pf.offset = f.offset;
-                pf.datatype = f.datatype;
-                pf.count = f.count;
-                pf
+            .map(|f| sensor_msgs::msg::PointField {
+                name: f.name,
+                offset: f.offset,
+                datatype: f.datatype,
+                count: f.count,
             })
             .collect();
 
@@ -125,23 +123,26 @@ mod tests {
         cloud.is_bigendian = false;
         cloud.is_dense = true;
 
-        let mut x = sensor_msgs::msg::PointField::default();
-        x.name = "x".to_string();
-        x.offset = 0;
-        x.datatype = PF_FLOAT32;
-        x.count = 1;
+        let x = sensor_msgs::msg::PointField {
+            name: "x".to_string(),
+            offset: 0,
+            datatype: PF_FLOAT32,
+            count: 1,
+        };
 
-        let mut y = sensor_msgs::msg::PointField::default();
-        y.name = "y".to_string();
-        y.offset = 4;
-        y.datatype = PF_FLOAT32;
-        y.count = 1;
+        let y = sensor_msgs::msg::PointField {
+            name: "y".to_string(),
+            offset: 4,
+            datatype: PF_FLOAT32,
+            count: 1,
+        };
 
-        let mut z = sensor_msgs::msg::PointField::default();
-        z.name = "z".to_string();
-        z.offset = 8;
-        z.datatype = PF_FLOAT32;
-        z.count = 1;
+        let z = sensor_msgs::msg::PointField {
+            name: "z".to_string(),
+            offset: 8,
+            datatype: PF_FLOAT32,
+            count: 1,
+        };
 
         cloud.fields = vec![x, y, z];
 

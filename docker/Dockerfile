@@ -4,8 +4,8 @@
 ARG ROS_DISTRO=jazzy
 FROM ros:${ROS_DISTRO}
 
-# Minimum supported Rust version of rclrs.
-ARG RUST_VERSION=1.85.0
+# Minimum supported Rust version of tf2_rs (required by cxx).
+ARG RUST_VERSION=1.88.0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3-pip \
@@ -15,7 +15,12 @@ RUN PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir colcon-ros-cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION}
 ENV PATH=/root/.cargo/bin:${PATH}
+RUN rustup component add clippy rustfmt
 
 WORKDIR /workspace
 COPY . src/tf2_rs
-RUN . /opt/ros/${ROS_DISTRO}/setup.sh && colcon build --packages-up-to tf2_rs
+RUN . /opt/ros/${ROS_DISTRO}/setup.sh \
+    && cd src/tf2_rs \
+    && cargo fetch --locked \
+    && cd /workspace \
+    && colcon build --packages-up-to tf2_rs

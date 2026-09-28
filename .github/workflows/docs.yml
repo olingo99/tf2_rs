@@ -1,0 +1,45 @@
+# docs.rs cannot build tf2_rs (it needs a ROS installation), so the API docs are
+# built in a ROS container and published to GitHub Pages.
+name: Docs
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build docs
+        run: |
+          docker build -f docker/Dockerfile --build-arg ROS_DISTRO=jazzy -t tf2_rs:docs .
+          mkdir site
+          docker run --rm -v "$PWD/site:/site" tf2_rs:docs \
+            bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo doc --no-deps --locked && cp -r target/doc/. /site'
+          echo '<meta http-equiv="refresh" content="0; url=tf2_rs/index.html">' > site/index.html
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+        id: deployment

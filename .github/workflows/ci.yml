@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  # Weekly run to catch new ROS binary syncs; its latest-compatible job also
+  # tests newer semver-compatible crate releases than the committed Cargo.lock.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy, kilted, lyrical, rolling]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build
+        run: >
+          docker build -f docker/Dockerfile
+          --build-arg ROS_DISTRO=${{ matrix.distro }}
+          -t tf2_rs:${{ matrix.distro }} .
+
+      - name: Test
+        run: >
+          docker run --rm tf2_rs:${{ matrix.distro }}
+          bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo test --locked'
+
+      # Follows the README "From crates.io" instructions in a new ROS package,
+      # using the files `cargo package` would upload, and runs the README examples.
+      - name: Test crates.io installation
+        run: >
+          docker run --rm tf2_rs:${{ matrix.distro }}
+          src/tf2_rs/.github/scripts/test-crates-io-install.sh
+
+      - name: Formatting, Clippy and docs
+        if: matrix.distro == 'jazzy'
+        run: >
+          docker run --rm tf2_rs:${{ matrix.distro }}
+          bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs &&
+          cargo fmt --all -- --check &&
+          cargo clippy --all-targets --all-features --locked -- -D warnings &&
+          cargo doc --no-deps --locked'
+
+  # This intentionally updates the lockfile. It is an early-warning job for
+  # new semver-compatible crate releases; normal PR and release builds above
+  # remain reproducible from the committed Cargo.lock.
+  latest-compatible:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: latest / ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy, kilted, lyrical, rolling]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve latest compatible crate versions
+        run: cargo update
+
+      - name: Build and test latest compatible versions
+        run: |
+          docker build -f docker/Dockerfile --build-arg ROS_DISTRO=${{ matrix.distro }} -t tf2_rs:latest-${{ matrix.distro }} .
+          docker run --rm tf2_rs:latest-${{ matrix.distro }} \
+            bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo test --locked'
