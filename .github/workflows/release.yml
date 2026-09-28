@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check tag matches Cargo.toml and package.xml
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          package_version=$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' package.xml)
+          echo "tag=$tag Cargo.toml=$cargo_version package.xml=$package_version"
+          test "$tag" = "$cargo_version" && test "$tag" = "$package_version"
+
+      - name: Check tag commit is contained in master
+        run: |
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/master
+
+  ci:
+    needs: check-version
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1
+        id: auth
+
+      # Publish from the same image CI tested; building it needs a sourced ROS.
+      # Skipped if the version is already on crates.io (first manual release,
+      # or re-running a release whose later steps failed).
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          if curl -sfA "tf2_rs release workflow (https://github.com/olingo99/tf2_rs)" \
+              "https://crates.io/api/v1/crates/tf2_rs/${GITHUB_REF_NAME#v}" > /dev/null; then
+            echo "tf2_rs ${GITHUB_REF_NAME#v} is already on crates.io, skipping publish"
+            exit 0
+          fi
+          docker build -f docker/Dockerfile --build-arg ROS_DISTRO=jazzy -t tf2_rs:release .
+          docker run --rm -e CARGO_REGISTRY_TOKEN tf2_rs:release \
+            bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo publish --locked'
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+
+  # Same installation test as CI, but downloading the published crate.
+  verify-crates-io:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install tf2_rs from crates.io
+        run: |
+          docker build -f docker/Dockerfile --build-arg ROS_DISTRO=jazzy -t tf2_rs:verify .
+          # The crates.io index can take a moment to show a new version.
+          for attempt in 1 2 3 4 5; do
+            docker run --rm tf2_rs:verify \
+              src/tf2_rs/.github/scripts/test-crates-io-install.sh --from-crates-io && exit 0
+            echo "attempt $attempt failed, retrying in 30s"
+            sleep 30
+          done
+          exit 1
+
+  docs:
+    needs: publish
+    uses: ./.github/workflows/docs.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

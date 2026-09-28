@@ -2,7 +2,7 @@
   <name>tf2_rs</name>
   <version>0.1.0</version>
   <description>ROS 2 TF2 bindings for Rust using cxx</description>
-  <maintainer email="user@todo.todo">user</maintainer>
+  <maintainer email="33429185+olingo99@users.noreply.github.com">Theo Engels</maintainer>
   <license>MIT</license>
 
   <depend>geometry_msgs</depend>

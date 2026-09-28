@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Updates the committed lockfile for compatible releases and opens manifest
+  # update PRs for new versions such as rclrs 0.9.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # rclrs and ros-env must move together, or message types stop matching.
+      ros2-rust:
+        patterns: [rclrs, ros-env]
+      # Every other compatible update (e.g. frequent cxx releases) in one weekly
+      # PR. Major updates such as thiserror 1 -> 2 still get their own PR.
+      other:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

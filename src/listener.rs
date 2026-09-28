@@ -14,12 +14,14 @@ impl TransformListener {
         let worker = node.create_worker(buf_tf);
 
         let logger_cb = node.logger().clone();
-        let tf_sub =
-            worker.create_subscription("/tf".keep_last(100).reliable(), move |buf: &mut BufferCore, msg: TFMessage| {
+        let tf_sub = worker.create_subscription(
+            "/tf".keep_last(100).reliable(),
+            move |buf: &mut BufferCore, msg: TFMessage| {
                 buf.ingest_tf_message(msg, "tf2_rs", false, |e| {
                     log_error!(&logger_cb, "Tf2 bindings error on set_transform:  {}", e)
                 });
-            })?;
+            },
+        )?;
 
         let logger_cb = node.logger().clone();
 
