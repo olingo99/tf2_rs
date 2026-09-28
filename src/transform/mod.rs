@@ -3,6 +3,7 @@ pub mod sensor_msgs;
 
 use crate::ffi::ffi;
 use crate::{Tf2Error, TransformStamped};
+use ros_env::std_msgs;
 
 pub trait HasHeader {
     fn frame_id(&self) -> &str;

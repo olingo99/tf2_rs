@@ -1,4 +1,5 @@
 use crate::ffi::ffi;
+use ros_env::geometry_msgs;
 
 #[derive(Clone, Debug)]
 pub struct TransformStamped {
