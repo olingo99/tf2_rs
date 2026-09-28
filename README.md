@@ -7,7 +7,9 @@ transforms.
 
 ## Status
 
-- Developed and validated primarily against ROS 2 Jazzy. Supports Humble, Jazzy, Kilted and Lyrical. (A know issue in rclrs blocks compilation for Lyrical currently but should be fixed soon)
+- Validated against ROS 2 Humble, Jazzy, Kilted, Lyrical, and Rolling. Iron is
+  not supported because it is end-of-life and current `rclrs` no longer ships
+  Iron bindings.
 - Recommended build path: `ament_cargo` inside a sourced ROS 2 workspace.
 - Currently implemented `Transformable` support: `sensor_msgs::msg::PointCloud2`.
 - This crate is not a full `tf2_ros` replacement yet; it covers the core pieces
@@ -41,10 +43,11 @@ from `source` in `target`.
 ## Requirements
 
 - ROS 2 installed locally and sourceable from `/opt/ros/<distro>/setup.bash`
-- Stable Rust toolchain
+- Rust 1.85 or newer
 - `cargo`, `colcon`, `rosdep`, and a C++17-capable compiler
-- A ROS 2 Rust overlay that provides the generated message crates used by this
-  package: `geometry_msgs`, `sensor_msgs`, `std_msgs`, and `tf2_msgs`
+- `rosidl_generator_rs` and the generated Rust interfaces from the selected
+  ROS installation
+- `colcon-cargo` and `colcon-ros-cargo`
 
 `build.rs` reads `ROS_DISTRO` and `AMENT_PREFIX_PATH`. If your shell is not
 sourced before building, the crate will fail to compile.
@@ -53,10 +56,9 @@ sourced before building, the crate will fail to compile.
 
 ### Recommended workflow
 
-Build `tf2_rs` inside a ROS 2 workspace that already has `rosidl_rust` and the
-generated Rust message crates available.
-
-If you already have such an overlay, add this package under `src/` and run:
+Current ROS binary installations from Humble through Rolling contain the Rust
+generator and generated interfaces needed by `ros-env`. Add this package under
+`src/`; no source message repositories or `geometry2` checkout are required.
 
 ```bash
 source /opt/ros/<distro>/setup.bash
@@ -66,22 +68,13 @@ source install/setup.bash
 
 ### Minimal workspace
 
-If you do not already have a Rust-enabled ROS 2 overlay, this is a minimal
-workspace layout that matches the package dependencies used by `tf2_rs` today (example for jazzy):
+For example, on Jazzy:
 
 ```bash
 mkdir -p ~/tf2_rs_ws/src
 cd ~/tf2_rs_ws/src
 
 git clone https://github.com/olingo99/tf2_rs.git tf2_rs
-git clone -b jazzy https://github.com/ros2/common_interfaces.git
-git clone -b jazzy https://github.com/ros2/example_interfaces.git
-git clone -b jazzy https://github.com/ros2/rcl_interfaces.git
-git clone -b jazzy https://github.com/ros2/rosidl_core.git
-git clone -b jazzy https://github.com/ros2/rosidl_defaults.git
-git clone -b jazzy https://github.com/ros2/unique_identifier_msgs.git
-git clone https://github.com/ros2-rust/rosidl_rust.git
-git clone -b jazzy https://github.com/ros2/geometry2.git
 ```
 
 Install system dependencies and build the crate:
@@ -94,6 +87,12 @@ colcon build --symlink-install --packages-up-to tf2_rs
 source install/setup.bash
 ```
 
+A Docker build for any supported distribution is available from the repository
+root:
+
+```bash
+docker build -f docker/Dockerfile --build-arg ROS_DISTRO=jazzy .
+```
 
 ## Usage
 
@@ -136,7 +135,7 @@ be kept alive for as long as you want TF updates.
 use std::time::Duration;
 
 use rclrs::{Context, RclrsError, SpinOptions};
-use sensor_msgs::msg::PointCloud2;
+use ros_env::sensor_msgs::msg::PointCloud2;
 use tf2_rs::{BufferCore, TimeSpec, TransformListener};
 
 fn main() -> Result<(), RclrsError> {

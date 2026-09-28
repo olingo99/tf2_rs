@@ -4,6 +4,7 @@ use crate::ffi_utils::{call_bool, call_out};
 use crate::time::{LookupTime, TimeSpec};
 use crate::transform::Transformable;
 use crate::transform_stamped::TransformStamped;
+use ros_env::tf2_msgs;
 
 
 unsafe impl Send for BufferCoreWrapper {}

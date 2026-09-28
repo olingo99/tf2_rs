@@ -1,4 +1,5 @@
 use crate::transform_stamped::TransformStamped;
+use ros_env::geometry_msgs;
 
 impl From<&geometry_msgs::msg::TransformStamped> for TransformStamped {
     fn from(t: &geometry_msgs::msg::TransformStamped) -> Self {

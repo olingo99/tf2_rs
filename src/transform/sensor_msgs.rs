@@ -3,6 +3,7 @@ use crate::TransformStamped;
 use crate::ffi::ffi;
 use crate::ffi_utils::call_out;
 use crate::transform::Transformable;
+use ros_env::sensor_msgs;
 
 crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::PointCloud2);
 
