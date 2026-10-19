@@ -39,17 +39,22 @@ pub mod ffi {
     }
 
     #[derive(Clone, Debug, Default)]
+    struct Tf2Transform {
+        tx: f64,
+        ty: f64,
+        tz: f64,
+        qx: f64,
+        qy: f64,
+        qz: f64,
+        qw: f64,
+    }
+
+    #[derive(Clone, Debug, Default)]
     struct Tf2TransformStamped {
         stamp: Tf2Time,
         parent_frame: String,
         child_frame: String,
-        translation_x: f64,
-        translation_y: f64,
-        translation_z: f64,
-        rotation_x: f64,
-        rotation_y: f64,
-        rotation_z: f64,
-        rotation_w: f64,
+        tf: Tf2Transform,
     }
 
     #[derive(Clone, Debug, Default)]
@@ -72,28 +77,26 @@ pub mod ffi {
         orientation_w: f64,
     }
 
-    // sensor_msgs/msg/PointField
+    // sensor_msgs/msg/PointField, borrowing its name from the Rust message.
     #[derive(Clone, Debug, Default)]
-    struct Tf2PointField {
-        name: String,
+    struct Tf2PointField<'a> {
+        name: &'a str,
         offset: u32,
         datatype: u8,
         count: u32,
     }
 
-    // sensor_msgs/msg/PointCloud2
+    // sensor_msgs/msg/PointCloud2 without its header, fields and data.
     #[derive(Clone, Debug, Default)]
-    struct Tf2PointCloud2 {
-        header: Tf2Header,
+    struct Tf2CloudLayout {
         height: u32,
         width: u32,
-        fields: Vec<Tf2PointField>,
         is_bigendian: bool,
         point_step: u32,
         row_step: u32,
-        data: Vec<u8>,
         is_dense: bool,
     }
+
     unsafe extern "C++" {
         include!("tf2_wrapper.h");
 
@@ -127,10 +130,13 @@ pub mod ffi {
             out_ok: &mut bool,
         ) -> Tf2Status;
 
+        // `out` must have the same length as `data`; the header is set on the Rust side.
         fn do_transform_pointcloud2(
-            input: &Tf2PointCloud2,
-            tf: &Tf2TransformStamped,
-            out: &mut Tf2PointCloud2,
+            layout: &Tf2CloudLayout,
+            fields: &[Tf2PointField],
+            data: &[u8],
+            tf: &Tf2Transform,
+            out: &mut [u8],
         ) -> Tf2Status;
     }
 }

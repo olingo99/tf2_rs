@@ -3,6 +3,7 @@
 #include "tf2_rs/src/ffi.rs.h"
 
 #include <chrono>
+#include <cstring>
 #include <string>
 
 #if __has_include(<geometry_msgs/msg/transform_stamped.hpp>)
@@ -107,14 +108,29 @@ static geometry_msgs::msg::TransformStamped to_ros(const Tf2TransformStamped& tf
   out.header.frame_id = std::string(tf.parent_frame);
   out.child_frame_id = std::string(tf.child_frame);
 
-  out.transform.translation.x = tf.translation_x;
-  out.transform.translation.y = tf.translation_y;
-  out.transform.translation.z = tf.translation_z;
+  out.transform.translation.x = tf.tf.tx;
+  out.transform.translation.y = tf.tf.ty;
+  out.transform.translation.z = tf.tf.tz;
 
-  out.transform.rotation.x = tf.rotation_x;
-  out.transform.rotation.y = tf.rotation_y;
-  out.transform.rotation.z = tf.rotation_z;
-  out.transform.rotation.w = tf.rotation_w;
+  out.transform.rotation.x = tf.tf.qx;
+  out.transform.rotation.y = tf.tf.qy;
+  out.transform.rotation.z = tf.tf.qz;
+  out.transform.rotation.w = tf.tf.qw;
+
+  return out;
+}
+
+// Header and child frame stay empty: doTransform only reads the transform itself.
+static geometry_msgs::msg::TransformStamped to_ros(const Tf2Transform& tf) {
+  geometry_msgs::msg::TransformStamped out;
+  out.transform.translation.x = tf.tx;
+  out.transform.translation.y = tf.ty;
+  out.transform.translation.z = tf.tz;
+
+  out.transform.rotation.x = tf.qx;
+  out.transform.rotation.y = tf.qy;
+  out.transform.rotation.z = tf.qz;
+  out.transform.rotation.w = tf.qw;
 
   return out;
 }
@@ -126,14 +142,14 @@ static Tf2TransformStamped from_ros(const geometry_msgs::msg::TransformStamped& 
   out.parent_frame = tf.header.frame_id;
   out.child_frame = tf.child_frame_id;
 
-  out.translation_x = tf.transform.translation.x;
-  out.translation_y = tf.transform.translation.y;
-  out.translation_z = tf.transform.translation.z;
+  out.tf.tx = tf.transform.translation.x;
+  out.tf.ty = tf.transform.translation.y;
+  out.tf.tz = tf.transform.translation.z;
 
-  out.rotation_x = tf.transform.rotation.x;
-  out.rotation_y = tf.transform.rotation.y;
-  out.rotation_z = tf.transform.rotation.z;
-  out.rotation_w = tf.transform.rotation.w;
+  out.tf.qx = tf.transform.rotation.x;
+  out.tf.qy = tf.transform.rotation.y;
+  out.tf.qz = tf.transform.rotation.z;
+  out.tf.qw = tf.transform.rotation.w;
 
   return out;
 }
@@ -279,68 +295,44 @@ Tf2Status do_transform_pose_stamped(
 }
 
 // sensor_msgs/PointCloud2
-static sensor_msgs::msg::PointCloud2 to_ros_pc2(const Tf2PointCloud2& in) {
-  sensor_msgs::msg::PointCloud2 out;
-  out.header = to_ros_header(in.header);
-  out.height = in.height;
-  out.width = in.width;
-
-  out.fields.reserve(in.fields.size());
-  for (const auto& f : in.fields) {
-    sensor_msgs::msg::PointField pf;
-    pf.name = std::string(f.name);
-    pf.offset = f.offset;
-    pf.datatype = f.datatype;
-    pf.count = f.count;
-    out.fields.push_back(std::move(pf));
-  }
-
-  out.is_bigendian = in.is_bigendian;
-  out.point_step = in.point_step;
-  out.row_step = in.row_step;
-  out.data.assign(in.data.begin(), in.data.end());
-  out.is_dense = in.is_dense;
-  return out;
-}
-
-static Tf2PointCloud2 from_ros_pc2(const sensor_msgs::msg::PointCloud2& in) {
-  Tf2PointCloud2 out;
-  out.header = from_ros_header(in.header);
-  out.height = in.height;
-  out.width = in.width;
-
-  out.fields.reserve(in.fields.size());
-  for (const auto& f : in.fields) {
-    Tf2PointField pf;
-    pf.name = f.name;
-    pf.offset = f.offset;
-    pf.datatype = f.datatype;
-    pf.count = f.count;
-    out.fields.push_back(std::move(pf));
-  }
-
-  out.is_bigendian = in.is_bigendian;
-  out.point_step = in.point_step;
-  out.row_step = in.row_step;
-  rust::Vec<uint8_t> data;
-  data.reserve(in.data.size());
-  for (auto b : in.data) {
-    data.push_back(b);
-  }
-  out.data = std::move(data);
-  out.is_dense = in.is_dense;
-  return out;
-}
-
 Tf2Status do_transform_pointcloud2(
-    const Tf2PointCloud2& input,
-    const Tf2TransformStamped& tf,
-    Tf2PointCloud2& out) {
-    return with_tf2_status([&] {
-    const auto in_ros = to_ros_pc2(input);
-    const auto tf_ros = to_ros(tf);
-    sensor_msgs::msg::PointCloud2 out_ros;
-    tf2::doTransform(in_ros, out_ros, tf_ros);
-      out = from_ros_pc2(out_ros);
+    const Tf2CloudLayout& layout,
+    rust::Slice<const Tf2PointField> fields,
+    rust::Slice<const uint8_t> data,
+    const Tf2Transform& tf,
+    rust::Slice<uint8_t> out) {
+  return with_tf2_status([&] {
+    if (out.size() != data.size()) {
+      throw tf2::InvalidArgumentException("PointCloud2 output buffer size does not match input");
+    }
+
+    sensor_msgs::msg::PointCloud2 cloud;
+    cloud.height = layout.height;
+    cloud.width = layout.width;
+    cloud.is_bigendian = layout.is_bigendian;
+    cloud.point_step = layout.point_step;
+    cloud.row_step = layout.row_step;
+    cloud.is_dense = layout.is_dense;
+
+    cloud.fields.reserve(fields.size());
+    for (const auto& f : fields) {
+      sensor_msgs::msg::PointField pf;
+      pf.name = std::string(f.name);
+      pf.offset = f.offset;
+      pf.datatype = f.datatype;
+      pf.count = f.count;
+      cloud.fields.push_back(std::move(pf));
+    }
+
+    // Raw pointers so the copy is a single memmove.
+    cloud.data.assign(data.data(), data.data() + data.size());
+
+    // Same object as input and output: tf2 allows this, and it avoids the
+    // full copy doTransform would otherwise make with `p_out = p_in`.
+    tf2::doTransform(cloud, cloud, to_ros(tf));
+
+    if (!cloud.data.empty()) {
+      std::memcpy(out.data(), cloud.data.data(), cloud.data.size());
+    }
   });
 }
