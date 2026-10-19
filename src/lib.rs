@@ -14,5 +14,5 @@ pub use buffer::{BufferCore, TransformAvailability};
 pub use error::Tf2Error;
 pub use listener::TransformListener;
 pub use time::{LookupTime, TimeSpec};
-pub use transform::{HasHeader, Transformable};
+pub use transform::{HasHeader, Transformable, do_transform};
 pub use transform_stamped::TransformStamped;
