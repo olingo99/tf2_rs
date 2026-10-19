@@ -20,6 +20,11 @@ pkg="$ws/src/tf2_rs_consumer"
 patch_path=""
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$repo/Cargo.toml" | head -n1)
 test -n "$version"
+# The consumer uses tf2_rs's edition and MSRV, so Cargo's MSRV-aware resolver
+# (the default from edition 2024) picks dependencies that build on that MSRV.
+edition=$(sed -n 's/^edition = "\(.*\)"/\1/p' "$repo/Cargo.toml" | head -n1)
+rust_version=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' "$repo/Cargo.toml" | head -n1)
+test -n "$edition" && test -n "$rust_version"
 if [ "${1:-}" != "--from-crates-io" ]; then
     (cd "$repo" && cargo package --locked --quiet)
     patch_path="$repo/target/package/tf2_rs-$version"
@@ -27,13 +32,14 @@ fi
 
 rm -rf "$ws"
 mkdir -p "$pkg/src/bin"
-python3 - "$repo/README.md" "$pkg" "$patch_path" "$version" <<'EOF'
+python3 - "$repo/README.md" "$pkg" "$patch_path" "$version" "$edition" "$rust_version" <<'EOF'
 import re
 import sys
 from pathlib import Path
 
 readme = Path(sys.argv[1]).read_text()
 pkg, patch_path, version = Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+edition, rust_version = sys.argv[5], sys.argv[6]
 
 def section(title):
     start = readme.index(title)
@@ -66,7 +72,8 @@ if not patch_path:
 cargo_toml = f"""[package]
 name = "tf2_rs_consumer"
 version = "0.0.0"
-edition = "2021"
+edition = "{edition}"
+rust-version = "{rust_version}"
 
 {dependencies}"""
 if patch_path:
