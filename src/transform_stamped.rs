@@ -20,13 +20,19 @@ impl TransformStamped {
             },
             parent_frame: self.parent_frame.clone(),
             child_frame: self.child_frame.clone(),
-            translation_x: self.translation[0],
-            translation_y: self.translation[1],
-            translation_z: self.translation[2],
-            rotation_x: self.rotation[0],
-            rotation_y: self.rotation[1],
-            rotation_z: self.rotation[2],
-            rotation_w: self.rotation[3],
+            tf: self.to_ffi_transform(),
+        }
+    }
+
+    pub(crate) fn to_ffi_transform(&self) -> ffi::Tf2Transform {
+        ffi::Tf2Transform {
+            tx: self.translation[0],
+            ty: self.translation[1],
+            tz: self.translation[2],
+            qx: self.rotation[0],
+            qy: self.rotation[1],
+            qz: self.rotation[2],
+            qw: self.rotation[3],
         }
     }
 
@@ -36,8 +42,8 @@ impl TransformStamped {
             stamp_nanosec: v.stamp.nanosec,
             parent_frame: v.parent_frame,
             child_frame: v.child_frame,
-            translation: [v.translation_x, v.translation_y, v.translation_z],
-            rotation: [v.rotation_x, v.rotation_y, v.rotation_z, v.rotation_w],
+            translation: [v.tf.tx, v.tf.ty, v.tf.tz],
+            rotation: [v.tf.qx, v.tf.qy, v.tf.qz, v.tf.qw],
         }
     }
 }
