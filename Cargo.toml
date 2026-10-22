@@ -18,7 +18,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 cxx = "1"
-thiserror = "1"
+thiserror = "2"
 rclrs = "0.8"
 ros-env = "0.3"
 
