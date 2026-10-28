@@ -15,12 +15,8 @@
 // Forward-declare all cxx-shared structs in the GLOBAL namespace.
 // The definitions come from the cxx-generated header (ffi.rs.h).
 struct Tf2Time;
-struct Tf2Header;
 struct Tf2Transform;
 struct Tf2TransformStamped;
-
-struct Tf2PointStamped;
-struct Tf2PoseStamped;
 
 struct Tf2PointField;
 struct Tf2CloudLayout;
@@ -63,17 +59,6 @@ private:
 };
 
 std::shared_ptr<BufferCoreWrapper> new_buffer_core(uint64_t cache_time_ns);
-
-// TF2 built-in doTransform wrappers (free functions) now return status + out-param
-Tf2Status do_transform_point_stamped(
-    const Tf2PointStamped& input,
-    const Tf2TransformStamped& tf,
-    Tf2PointStamped& out);
-
-Tf2Status do_transform_pose_stamped(
-    const Tf2PoseStamped& input,
-    const Tf2TransformStamped& tf,
-    Tf2PoseStamped& out);
 
 // `out` must have the same length as `data`. The header is not touched here;
 // the caller sets it from the transform.

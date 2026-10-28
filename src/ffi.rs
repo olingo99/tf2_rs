@@ -33,12 +33,6 @@ pub mod ffi {
     }
 
     #[derive(Clone, Debug, Default)]
-    struct Tf2Header {
-        stamp: Tf2Time,
-        frame_id: String,
-    }
-
-    #[derive(Clone, Debug, Default)]
     struct Tf2Transform {
         tx: f64,
         ty: f64,
@@ -55,26 +49,6 @@ pub mod ffi {
         parent_frame: String,
         child_frame: String,
         tf: Tf2Transform,
-    }
-
-    #[derive(Clone, Debug, Default)]
-    struct Tf2PointStamped {
-        header: Tf2Header,
-        x: f64,
-        y: f64,
-        z: f64,
-    }
-
-    #[derive(Clone, Debug, Default)]
-    struct Tf2PoseStamped {
-        header: Tf2Header,
-        position_x: f64,
-        position_y: f64,
-        position_z: f64,
-        orientation_x: f64,
-        orientation_y: f64,
-        orientation_z: f64,
-        orientation_w: f64,
     }
 
     // sensor_msgs/msg/PointField, borrowing its name from the Rust message.
