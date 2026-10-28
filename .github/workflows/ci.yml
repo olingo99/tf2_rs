@@ -4,8 +4,9 @@ on:
   push:
     branches: [master]
   pull_request:
-  # Weekly run to catch new ROS binary syncs; its latest-compatible job also
-  # tests newer semver-compatible crate releases than the committed Cargo.lock.
+  # Weekly run to catch updated ros:<distro> images, which pick up ROS binary
+  # syncs when they are rebuilt; its latest-compatible job also tests newer
+  # semver-compatible crate releases than the committed Cargo.lock.
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
@@ -81,3 +82,8 @@ jobs:
           docker build -f docker/Dockerfile --build-arg ROS_DISTRO=${{ matrix.distro }} -t tf2_rs:latest-${{ matrix.distro }} .
           docker run --rm tf2_rs:latest-${{ matrix.distro }} \
             bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo test --locked'
+
+      - name: Parity with C++ tf2 on latest compatible versions
+        run: >
+          docker run --rm tf2_rs:latest-${{ matrix.distro }}
+          bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && CXXFLAGS=-D_GLIBCXX_ASSERTIONS cargo test --locked -p tf2_rs_oracle'
