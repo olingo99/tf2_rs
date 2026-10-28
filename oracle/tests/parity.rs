@@ -437,8 +437,9 @@ fn pointcloud2_errors_match_tf2() {
         assert!(got.is_err(), "Rust accepted fields {names:?}");
         assert!(want.is_err(), "C++ accepted fields {names:?}");
     }
-    // No points: both succeed and return an empty cloud.
+    // No points: Rust returns an empty cloud. Upstream is undefined there (its
+    // iterators take `&data.front()`), so the oracle refuses the cloud.
     let empty = random_cloud(&mut rng, &["x", "y", "z"], 0);
     assert!(empty.apply_transform(&tf).unwrap().data.is_empty());
-    assert!(oracle::pointcloud2(&empty, &tf).unwrap().data.is_empty());
+    assert!(oracle::pointcloud2(&empty, &tf).is_err());
 }

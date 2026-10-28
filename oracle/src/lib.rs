@@ -63,7 +63,8 @@ pub mod ffi {
         /// Returns false where tf2_sensor_msgs has no Imu transform (Humble).
         fn do_transform_imu(imu: &ImuData, tf: &[f64; 7], out: &mut ImuData) -> bool;
 
-        /// `out` must have the same length as `data`.
+        /// `out` must have the same length as `data`, and `data` must not be empty:
+        /// upstream is undefined there.
         fn do_transform_pointcloud2(
             layout: &CloudLayout,
             fields: &[PointField],

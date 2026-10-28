@@ -170,6 +170,11 @@ void do_transform_pointcloud2(
   if (out.size() != data.size()) {
     throw std::invalid_argument("PointCloud2 output buffer size does not match input");
   }
+  // The upstream iterators take &data.front(), undefined for empty data (an
+  // assertion failure where libstdc++ checks it, as on Lyrical and Rolling).
+  if (data.empty()) {
+    throw std::invalid_argument("upstream doTransform is undefined for a cloud without data");
+  }
   sensor_msgs::msg::PointCloud2 in, result;
   fill_cloud(in, layout, fields, data);
   tf2::doTransform(in, result, to_msg(tf));
