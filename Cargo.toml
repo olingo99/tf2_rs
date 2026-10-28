@@ -24,3 +24,8 @@ ros-env = "0.3"
 
 [build-dependencies]
 cxx-build = "1"
+
+# The C++ reference used by the parity tests; not published. Its COLCON_IGNORE
+# keeps colcon from building it as a package.
+[workspace]
+members = ["oracle"]

@@ -872,6 +872,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tf2_rs_oracle"
+version = "0.0.0"
+dependencies = [
+ "cxx",
+ "cxx-build",
+ "ros-env",
+ "tf2_rs",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -36,6 +36,12 @@ jobs:
           docker run --rm tf2_rs:${{ matrix.distro }}
           bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo test --locked'
 
+      # Checks the Rust transforms against upstream C++ tf2 (oracle/).
+      - name: Parity with C++ tf2
+        run: >
+          docker run --rm tf2_rs:${{ matrix.distro }}
+          bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo test --locked -p tf2_rs_oracle'
+
       # Follows the README "From crates.io" instructions in a new ROS package,
       # using the files `cargo package` would upload, and runs the README examples.
       - name: Test crates.io installation
@@ -49,7 +55,7 @@ jobs:
           docker run --rm tf2_rs:${{ matrix.distro }}
           bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs &&
           cargo fmt --all -- --check &&
-          cargo clippy --all-targets --all-features --locked -- -D warnings &&
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings &&
           cargo doc --no-deps --locked'
 
   # This intentionally updates the lockfile. It is an early-warning job for
