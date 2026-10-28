@@ -1,0 +1,16 @@
+[package]
+name = "tf2_rs_oracle"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Upstream C++ tf2 transforms, to check tf2_rs against (test-only)"
+license = "MIT"
+publish = false
+
+[dependencies]
+cxx = "1"
+ros-env = "0.3"
+tf2_rs = { path = ".." }
+
+[build-dependencies]
+cxx-build = "1"

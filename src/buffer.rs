@@ -1,3 +1,4 @@
+use crate::HasHeader;
 use crate::error::Tf2Error;
 use crate::ffi::ffi::{self, BufferCoreWrapper};
 use crate::ffi_utils::{call_bool, call_out};
@@ -96,7 +97,7 @@ impl BufferCore {
         Ok(TransformStamped::from_ffi(ffi_tf))
     }
 
-    pub fn transform<T: Transformable>(
+    pub fn transform<T: Transformable + HasHeader>(
         &self,
         msg: &T,
         target_frame: &str,

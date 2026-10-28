@@ -222,6 +222,14 @@ Issues and PRs are welcome.
 CI builds and tests every push and pull request on Humble, Jazzy, Kilted,
 Lyrical and Rolling. Releases are described in [`RELEASING.md`](RELEASING.md).
 
+The transforms are checked against upstream C++ tf2 by the parity tests in
+[`oracle/`](oracle/), a test-only crate that calls `tf2::doTransform` for each
+supported type:
+
+```bash
+cargo test -p tf2_rs_oracle -- --nocapture
+```
+
 ## License
 
 MIT. See `LICENSE`.

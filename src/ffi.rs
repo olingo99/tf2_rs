@@ -33,12 +33,6 @@ pub mod ffi {
     }
 
     #[derive(Clone, Debug, Default)]
-    struct Tf2Header {
-        stamp: Tf2Time,
-        frame_id: String,
-    }
-
-    #[derive(Clone, Debug, Default)]
     struct Tf2Transform {
         tx: f64,
         ty: f64,
@@ -55,46 +49,6 @@ pub mod ffi {
         parent_frame: String,
         child_frame: String,
         tf: Tf2Transform,
-    }
-
-    #[derive(Clone, Debug, Default)]
-    struct Tf2PointStamped {
-        header: Tf2Header,
-        x: f64,
-        y: f64,
-        z: f64,
-    }
-
-    #[derive(Clone, Debug, Default)]
-    struct Tf2PoseStamped {
-        header: Tf2Header,
-        position_x: f64,
-        position_y: f64,
-        position_z: f64,
-        orientation_x: f64,
-        orientation_y: f64,
-        orientation_z: f64,
-        orientation_w: f64,
-    }
-
-    // sensor_msgs/msg/PointField, borrowing its name from the Rust message.
-    #[derive(Clone, Debug, Default)]
-    struct Tf2PointField<'a> {
-        name: &'a str,
-        offset: u32,
-        datatype: u8,
-        count: u32,
-    }
-
-    // sensor_msgs/msg/PointCloud2 without its header, fields and data.
-    #[derive(Clone, Debug, Default)]
-    struct Tf2CloudLayout {
-        height: u32,
-        width: u32,
-        is_bigendian: bool,
-        point_step: u32,
-        row_step: u32,
-        is_dense: bool,
     }
 
     unsafe extern "C++" {
@@ -128,15 +82,6 @@ pub mod ffi {
             authority: &str,
             is_static: bool,
             out_ok: &mut bool,
-        ) -> Tf2Status;
-
-        // `out` must have the same length as `data`; the header is set on the Rust side.
-        fn do_transform_pointcloud2(
-            layout: &Tf2CloudLayout,
-            fields: &[Tf2PointField],
-            data: &[u8],
-            tf: &Tf2Transform,
-            out: &mut [u8],
         ) -> Tf2Status;
     }
 }

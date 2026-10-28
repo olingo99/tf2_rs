@@ -1,58 +1,262 @@
 use crate::Tf2Error;
 use crate::TransformStamped;
-use crate::error::check_status;
-use crate::ffi::ffi;
-use crate::transform::Transformable;
+use crate::transform::{Transformable, header_from_transform, math};
+use ros_env::geometry_msgs::msg::{Quaternion, Vector3};
 use ros_env::sensor_msgs;
 
 crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::PointCloud2);
+crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::Imu);
 
+/// Follows tf2_sensor_msgs. The fields named `x`, `y`, `z` (and `normal_x`,
+/// `normal_y`, `normal_z` when `normal_x` exists) are read as native-endian `f32`
+/// at their offsets, whatever their declared datatype, as the C++ iterators do.
+/// Points get the full transform and normals only the rotation, both in `f32` as
+/// Eigen computes them. All other bytes are copied unchanged, and the point count
+/// is `data.len() / point_step`, not `width * height`.
+///
+/// Where the C++ code would read out of bounds (a field that does not fit in
+/// `point_step`, or `data` not a whole number of points), this returns
+/// `InvalidArgument` instead.
 impl Transformable for sensor_msgs::msg::PointCloud2 {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
-        let layout = ffi::Tf2CloudLayout {
+        let step = self.point_step as usize;
+        let offset = |name: &str| {
+            self.fields
+                .iter()
+                .find(|f| f.name == name)
+                .map(|f| f.offset as usize)
+                .ok_or_else(|| Tf2Error::InvalidArgument(format!("Field {name} does not exist")))
+        };
+        // Same lookup order as the C++ iterators, so the same field is reported missing.
+        let xyz = [offset("x")?, offset("y")?, offset("z")?];
+        let normals = if self.fields.iter().any(|f| f.name == "normal_x") {
+            Some([
+                offset("normal_x")?,
+                offset("normal_y")?,
+                offset("normal_z")?,
+            ])
+        } else {
+            None
+        };
+
+        if !self.data.is_empty() {
+            if step == 0 || !self.data.len().is_multiple_of(step) {
+                return Err(Tf2Error::InvalidArgument(format!(
+                    "PointCloud2 data length {} is not a multiple of point_step {step}",
+                    self.data.len()
+                )));
+            }
+            if let Some(&off) = xyz
+                .iter()
+                .chain(normals.iter().flatten())
+                .find(|&&o| o + 4 > step)
+            {
+                return Err(Tf2Error::InvalidArgument(format!(
+                    "PointCloud2 field at offset {off} does not fit in point_step {step}"
+                )));
+            }
+        }
+
+        let r = math::eigen_rotation_f32(tf.rotation.map(|v| v as f32));
+        let t = tf.translation.map(|v| v as f32);
+        // Eigen's affine product: R * v + t, summed in this order.
+        let apply = |v: [f32; 3], t: [f32; 3]| -> [f32; 3] {
+            std::array::from_fn(|i| r[i][0] * v[0] + r[i][1] * v[1] + r[i][2] * v[2] + t[i])
+        };
+        // Read from the input and write to the copy, as C++ reads p_in and writes
+        // p_out: overlapping fields then give the same result.
+        let mut data = self.data.clone();
+        if step > 0 {
+            for (src, dst) in self
+                .data
+                .chunks_exact(step)
+                .zip(data.chunks_exact_mut(step))
+            {
+                write_f32x3(dst, xyz, apply(read_f32x3(src, xyz), t));
+                if let Some(n) = normals {
+                    // Translation (0, 0, 0) is still added, as Eigen does; it turns
+                    // -0.0 into 0.0.
+                    write_f32x3(dst, n, apply(read_f32x3(src, n), [0.0; 3]));
+                }
+            }
+        }
+
+        Ok(sensor_msgs::msg::PointCloud2 {
+            header: header_from_transform(tf),
             height: self.height,
             width: self.width,
+            fields: self.fields.clone(),
             is_bigendian: self.is_bigendian,
             point_step: self.point_step,
             row_step: self.row_step,
+            data,
             is_dense: self.is_dense,
+        })
+    }
+}
+
+// Each value goes through one 4-byte slice: indexing the four bytes separately
+// made the PointCloud2 loop about five times slower.
+fn read_f32x3(p: &[u8], [a, b, c]: [usize; 3]) -> [f32; 3] {
+    let at = |o: usize| f32::from_ne_bytes(p[o..o + 4].try_into().unwrap());
+    [at(a), at(b), at(c)]
+}
+
+fn write_f32x3(p: &mut [u8], [a, b, c]: [usize; 3], v: [f32; 3]) {
+    p[a..a + 4].copy_from_slice(&v[0].to_ne_bytes());
+    p[b..b + 4].copy_from_slice(&v[1].to_ne_bytes());
+    p[c..c + 4].copy_from_slice(&v[2].to_ne_bytes());
+}
+
+/// Follows tf2_sensor_msgs (Jazzy and later; Humble's C++ has no Imu transform).
+/// Only the rotation is used. Angular velocity, linear acceleration and their
+/// covariances are rotated into the new frame. The orientation describes the
+/// sensor in a fixed world frame, so it is composed with the inverse rotation,
+/// and its covariance is unchanged.
+impl Transformable for sensor_msgs::msg::Imu {
+    fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+        let r = tf.rotation;
+        let m = math::eigen_rotation(r);
+        let rotate = |v: &Vector3| {
+            let [x, y, z] = math::mat_vec(&m, [v.x, v.y, v.z]);
+            Vector3 { x, y, z }
         };
-        let fields: Vec<ffi::Tf2PointField> = self
-            .fields
-            .iter()
-            .map(|f| ffi::Tf2PointField {
-                name: &f.name,
-                offset: f.offset,
-                datatype: f.datatype,
-                count: f.count,
-            })
-            .collect();
+        let o = &self.orientation;
+        let [x, y, z, w] = math::eigen_quat_mul([o.x, o.y, o.z, o.w], math::eigen_inverse(r));
+        Ok(sensor_msgs::msg::Imu {
+            header: header_from_transform(tf),
+            orientation: Quaternion { x, y, z, w },
+            orientation_covariance: self.orientation_covariance,
+            angular_velocity: rotate(&self.angular_velocity),
+            angular_velocity_covariance: math::rotate_covariance3(
+                &self.angular_velocity_covariance,
+                r,
+            ),
+            linear_acceleration: rotate(&self.linear_acceleration),
+            linear_acceleration_covariance: math::rotate_covariance3(
+                &self.linear_acceleration_covariance,
+                r,
+            ),
+        })
+    }
+}
 
-        // C++ writes the transformed points straight into the output buffer.
-        let mut data = vec![0u8; self.data.len()];
-        check_status(ffi::do_transform_pointcloud2(
-            &layout,
-            &fields,
-            &self.data,
-            &tf.to_ffi_transform(),
-            &mut data,
-        ))?;
+#[cfg(test)]
+mod imu_tests {
+    use super::*;
+    use crate::HasHeader;
+    use crate::transform::test_support::{Rng, assert_close, make_tf, rotate_by_quat};
 
-        // tf2_sensor_msgs sets the output header to the transform's header.
-        let mut out = sensor_msgs::msg::PointCloud2::default();
-        out.header.stamp.sec = tf.stamp_sec;
-        out.header.stamp.nanosec = tf.stamp_nanosec;
-        out.header.frame_id = tf.parent_frame.clone();
+    const S: f64 = std::f64::consts::FRAC_1_SQRT_2;
 
-        out.height = self.height;
-        out.width = self.width;
-        out.fields = self.fields.clone();
-        out.is_bigendian = self.is_bigendian;
-        out.point_step = self.point_step;
-        out.row_step = self.row_step;
-        out.data = data;
-        out.is_dense = self.is_dense;
-        Ok(out)
+    fn vec3(v: &Vector3) -> [f64; 3] {
+        [v.x, v.y, v.z]
+    }
+
+    #[test]
+    fn imu_is_rotated_without_translation() {
+        let tf = make_tf([10.0, 20.0, 30.0], [0.0, 0.0, S, S]); // 90 deg yaw
+        let mut imu = sensor_msgs::msg::Imu::default();
+        imu.header.frame_id = "imu_link".into();
+        imu.orientation.w = 1.0;
+        imu.orientation_covariance = [0.1, 0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.3];
+        imu.angular_velocity = Vector3 {
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        imu.angular_velocity_covariance = [1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0];
+        imu.linear_acceleration = Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 9.81,
+        };
+
+        let out = imu.apply_transform(&tf).unwrap();
+        assert_close(
+            &vec3(&out.angular_velocity),
+            &[0.0, 1.0, 0.0],
+            1e-12,
+            "angular velocity",
+        );
+        assert_close(
+            &vec3(&out.linear_acceleration),
+            &[0.0, 0.0, 9.81],
+            1e-12,
+            "acceleration",
+        );
+        let o = &out.orientation;
+        assert_close(
+            &[o.x, o.y, o.z, o.w],
+            &[0.0, 0.0, -S, S],
+            1e-12,
+            "orientation",
+        );
+        let c = out.angular_velocity_covariance;
+        assert_close(
+            &[c[0], c[4], c[8]],
+            &[2.0, 1.0, 3.0],
+            1e-12,
+            "covariance diagonal",
+        );
+        assert_eq!(out.orientation_covariance, imu.orientation_covariance);
+        assert_eq!(out.frame_id(), "map");
+    }
+
+    #[test]
+    fn random_imu_transforms_match_independent_math() {
+        let mut rng = Rng::new(2);
+        for _ in 0..2000 {
+            let tf = make_tf(rng.vec3(100.0), rng.unit_quat());
+            let mut imu = sensor_msgs::msg::Imu::default();
+            let q = rng.unit_quat();
+            imu.orientation = Quaternion {
+                x: q[0],
+                y: q[1],
+                z: q[2],
+                w: q[3],
+            };
+            let [x, y, z] = rng.vec3(10.0);
+            imu.angular_velocity = Vector3 { x, y, z };
+            let [x, y, z] = rng.vec3(10.0);
+            imu.linear_acceleration = Vector3 { x, y, z };
+            for i in 0..3 {
+                for j in i..3 {
+                    let v = rng.range(-1.0, 1.0);
+                    imu.linear_acceleration_covariance[i * 3 + j] = v;
+                    imu.linear_acceleration_covariance[j * 3 + i] = v;
+                }
+            }
+
+            let out = imu.apply_transform(&tf).unwrap();
+            let expected = rotate_by_quat(tf.rotation, vec3(&imu.angular_velocity));
+            assert_close(
+                &vec3(&out.angular_velocity),
+                &expected,
+                1e-9,
+                "angular velocity",
+            );
+            let expected = rotate_by_quat(tf.rotation, vec3(&imu.linear_acceleration));
+            assert_close(
+                &vec3(&out.linear_acceleration),
+                &expected,
+                1e-9,
+                "acceleration",
+            );
+            // Composing the result with the rotation again gives the input orientation.
+            let o = &out.orientation;
+            let back = math::quat_mul([o.x, o.y, o.z, o.w], tf.rotation);
+            assert_close(&back, &q, 1e-9, "orientation");
+            let trace = |c: &[f64; 9]| c[0] + c[4] + c[8];
+            let (c_in, c_out) = (
+                &imu.linear_acceleration_covariance,
+                &out.linear_acceleration_covariance,
+            );
+            assert!(
+                (trace(c_in) - trace(c_out)).abs() < 1e-9,
+                "covariance trace"
+            );
+        }
     }
 }
 
