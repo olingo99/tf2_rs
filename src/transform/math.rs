@@ -132,6 +132,21 @@ pub(crate) fn eigen_rotation(q: Quat) -> Mat3 {
     ]
 }
 
+/// `eigen_rotation` in `f32`, as `Eigen::Quaternionf::toRotationMatrix` in
+/// tf2_sensor_msgs' PointCloud2 transform.
+pub(crate) fn eigen_rotation_f32(q: [f32; 4]) -> [[f32; 3]; 3] {
+    let [x, y, z, w] = q;
+    let (tx, ty, tz) = (2.0 * x, 2.0 * y, 2.0 * z);
+    let (twx, twy, twz) = (tx * w, ty * w, tz * w);
+    let (txx, txy, txz) = (tx * x, ty * x, tz * x);
+    let (tyy, tyz, tzz) = (ty * y, tz * y, tz * z);
+    [
+        [1.0 - (tyy + tzz), txy - twz, txz + twy],
+        [txy + twz, 1.0 - (txx + tzz), tyz - twx],
+        [txz - twy, tyz + twx, 1.0 - (txx + tyy)],
+    ]
+}
+
 /// Hamilton product `a * b`, summed left to right as `tf2::Quaternion`'s
 /// `operator*` does. Only the tests use it until the Quaternion transform lands.
 #[cfg(test)]

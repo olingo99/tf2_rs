@@ -51,26 +51,6 @@ pub mod ffi {
         tf: Tf2Transform,
     }
 
-    // sensor_msgs/msg/PointField, borrowing its name from the Rust message.
-    #[derive(Clone, Debug, Default)]
-    struct Tf2PointField<'a> {
-        name: &'a str,
-        offset: u32,
-        datatype: u8,
-        count: u32,
-    }
-
-    // sensor_msgs/msg/PointCloud2 without its header, fields and data.
-    #[derive(Clone, Debug, Default)]
-    struct Tf2CloudLayout {
-        height: u32,
-        width: u32,
-        is_bigendian: bool,
-        point_step: u32,
-        row_step: u32,
-        is_dense: bool,
-    }
-
     unsafe extern "C++" {
         include!("tf2_wrapper.h");
 
@@ -102,15 +82,6 @@ pub mod ffi {
             authority: &str,
             is_static: bool,
             out_ok: &mut bool,
-        ) -> Tf2Status;
-
-        // `out` must have the same length as `data`; the header is set on the Rust side.
-        fn do_transform_pointcloud2(
-            layout: &Tf2CloudLayout,
-            fields: &[Tf2PointField],
-            data: &[u8],
-            tf: &Tf2Transform,
-            out: &mut [u8],
         ) -> Tf2Status;
     }
 }

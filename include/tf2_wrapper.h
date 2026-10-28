@@ -18,9 +18,6 @@ struct Tf2Time;
 struct Tf2Transform;
 struct Tf2TransformStamped;
 
-struct Tf2PointField;
-struct Tf2CloudLayout;
-
 // New: forward declarations for status/error code (defined in cxx-generated header)
 enum class Tf2Errc : int32_t;
 struct Tf2Status;
@@ -59,12 +56,3 @@ private:
 };
 
 std::shared_ptr<BufferCoreWrapper> new_buffer_core(uint64_t cache_time_ns);
-
-// `out` must have the same length as `data`. The header is not touched here;
-// the caller sets it from the transform.
-Tf2Status do_transform_pointcloud2(
-    const Tf2CloudLayout& layout,
-    rust::Slice<const Tf2PointField> fields,
-    rust::Slice<const uint8_t> data,
-    const Tf2Transform& tf,
-    rust::Slice<uint8_t> out);

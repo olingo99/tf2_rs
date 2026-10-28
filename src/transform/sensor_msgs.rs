@@ -1,7 +1,5 @@
 use crate::Tf2Error;
 use crate::TransformStamped;
-use crate::error::check_status;
-use crate::ffi::ffi;
 use crate::transform::{Transformable, header_from_transform, math};
 use ros_env::geometry_msgs::msg::{Quaternion, Vector3};
 use ros_env::sensor_msgs;
@@ -9,53 +7,105 @@ use ros_env::sensor_msgs;
 crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::PointCloud2);
 crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::Imu);
 
+/// Follows tf2_sensor_msgs. The fields named `x`, `y`, `z` (and `normal_x`,
+/// `normal_y`, `normal_z` when `normal_x` exists) are read as native-endian `f32`
+/// at their offsets, whatever their declared datatype, as the C++ iterators do.
+/// Points get the full transform and normals only the rotation, both in `f32` as
+/// Eigen computes them. All other bytes are copied unchanged, and the point count
+/// is `data.len() / point_step`, not `width * height`.
+///
+/// Where the C++ code would read out of bounds (a field that does not fit in
+/// `point_step`, or `data` not a whole number of points), this returns
+/// `InvalidArgument` instead.
 impl Transformable for sensor_msgs::msg::PointCloud2 {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
-        let layout = ffi::Tf2CloudLayout {
+        let step = self.point_step as usize;
+        let offset = |name: &str| {
+            self.fields
+                .iter()
+                .find(|f| f.name == name)
+                .map(|f| f.offset as usize)
+                .ok_or_else(|| Tf2Error::InvalidArgument(format!("Field {name} does not exist")))
+        };
+        // Same lookup order as the C++ iterators, so the same field is reported missing.
+        let xyz = [offset("x")?, offset("y")?, offset("z")?];
+        let normals = if self.fields.iter().any(|f| f.name == "normal_x") {
+            Some([
+                offset("normal_x")?,
+                offset("normal_y")?,
+                offset("normal_z")?,
+            ])
+        } else {
+            None
+        };
+
+        if !self.data.is_empty() {
+            if step == 0 || !self.data.len().is_multiple_of(step) {
+                return Err(Tf2Error::InvalidArgument(format!(
+                    "PointCloud2 data length {} is not a multiple of point_step {step}",
+                    self.data.len()
+                )));
+            }
+            if let Some(&off) = xyz
+                .iter()
+                .chain(normals.iter().flatten())
+                .find(|&&o| o + 4 > step)
+            {
+                return Err(Tf2Error::InvalidArgument(format!(
+                    "PointCloud2 field at offset {off} does not fit in point_step {step}"
+                )));
+            }
+        }
+
+        let r = math::eigen_rotation_f32(tf.rotation.map(|v| v as f32));
+        let t = tf.translation.map(|v| v as f32);
+        // Eigen's affine product: R * v + t, summed in this order.
+        let apply = |v: [f32; 3], t: [f32; 3]| -> [f32; 3] {
+            std::array::from_fn(|i| r[i][0] * v[0] + r[i][1] * v[1] + r[i][2] * v[2] + t[i])
+        };
+        // Read from the input and write to the copy, as C++ reads p_in and writes
+        // p_out: overlapping fields then give the same result.
+        let mut data = self.data.clone();
+        if step > 0 {
+            for (src, dst) in self
+                .data
+                .chunks_exact(step)
+                .zip(data.chunks_exact_mut(step))
+            {
+                write_f32x3(dst, xyz, apply(read_f32x3(src, xyz), t));
+                if let Some(n) = normals {
+                    // Translation (0, 0, 0) is still added, as Eigen does; it turns
+                    // -0.0 into 0.0.
+                    write_f32x3(dst, n, apply(read_f32x3(src, n), [0.0; 3]));
+                }
+            }
+        }
+
+        Ok(sensor_msgs::msg::PointCloud2 {
+            header: header_from_transform(tf),
             height: self.height,
             width: self.width,
+            fields: self.fields.clone(),
             is_bigendian: self.is_bigendian,
             point_step: self.point_step,
             row_step: self.row_step,
+            data,
             is_dense: self.is_dense,
-        };
-        let fields: Vec<ffi::Tf2PointField> = self
-            .fields
-            .iter()
-            .map(|f| ffi::Tf2PointField {
-                name: &f.name,
-                offset: f.offset,
-                datatype: f.datatype,
-                count: f.count,
-            })
-            .collect();
-
-        // C++ writes the transformed points straight into the output buffer.
-        let mut data = vec![0u8; self.data.len()];
-        check_status(ffi::do_transform_pointcloud2(
-            &layout,
-            &fields,
-            &self.data,
-            &tf.to_ffi_transform(),
-            &mut data,
-        ))?;
-
-        // tf2_sensor_msgs sets the output header to the transform's header.
-        let mut out = sensor_msgs::msg::PointCloud2::default();
-        out.header.stamp.sec = tf.stamp_sec;
-        out.header.stamp.nanosec = tf.stamp_nanosec;
-        out.header.frame_id = tf.parent_frame.clone();
-
-        out.height = self.height;
-        out.width = self.width;
-        out.fields = self.fields.clone();
-        out.is_bigendian = self.is_bigendian;
-        out.point_step = self.point_step;
-        out.row_step = self.row_step;
-        out.data = data;
-        out.is_dense = self.is_dense;
-        Ok(out)
+        })
     }
+}
+
+// Each value goes through one 4-byte slice: indexing the four bytes separately
+// made the PointCloud2 loop about five times slower.
+fn read_f32x3(p: &[u8], [a, b, c]: [usize; 3]) -> [f32; 3] {
+    let at = |o: usize| f32::from_ne_bytes(p[o..o + 4].try_into().unwrap());
+    [at(a), at(b), at(c)]
+}
+
+fn write_f32x3(p: &mut [u8], [a, b, c]: [usize; 3], v: [f32; 3]) {
+    p[a..a + 4].copy_from_slice(&v[0].to_ne_bytes());
+    p[b..b + 4].copy_from_slice(&v[1].to_ne_bytes());
+    p[c..c + 4].copy_from_slice(&v[2].to_ne_bytes());
 }
 
 /// Follows tf2_sensor_msgs (Jazzy and later; Humble's C++ has no Imu transform).

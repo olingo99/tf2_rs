@@ -8,11 +8,12 @@
 //! Only numbers cross the bridge: a transform is `[tx, ty, tz, qx, qy, qz, qw]` and
 //! a pose `[px, py, pz, qx, qy, qz, qw]`. Headers are therefore set on the Rust side,
 //! the same way the C++ code sets them (stamp and parent frame of the transform).
+//! PointCloud2 is the exception: its layout, fields and bytes cross as they are.
 
 use ros_env::geometry_msgs::msg::{
     Point, Pose, PoseWithCovariance, PoseWithCovarianceStamped, Quaternion, Vector3, Vector3Stamped,
 };
-use ros_env::sensor_msgs::msg::Imu;
+use ros_env::sensor_msgs::msg::{Imu, PointCloud2};
 use ros_env::{builtin_interfaces, std_msgs};
 use tf2_rs::TransformStamped;
 
@@ -26,6 +27,24 @@ pub mod ffi {
         angular_velocity_covariance: [f64; 9],
         linear_acceleration: [f64; 3],
         linear_acceleration_covariance: [f64; 9],
+    }
+
+    /// sensor_msgs/msg/PointField, borrowing its name from the Rust message.
+    struct PointField<'a> {
+        name: &'a str,
+        offset: u32,
+        datatype: u8,
+        count: u32,
+    }
+
+    /// sensor_msgs/msg/PointCloud2 without its header, fields and data.
+    struct CloudLayout {
+        height: u32,
+        width: u32,
+        is_bigendian: bool,
+        point_step: u32,
+        row_step: u32,
+        is_dense: bool,
     }
 
     unsafe extern "C++" {
@@ -43,6 +62,15 @@ pub mod ffi {
         );
         /// Returns false where tf2_sensor_msgs has no Imu transform (Humble).
         fn do_transform_imu(imu: &ImuData, tf: &[f64; 7], out: &mut ImuData) -> bool;
+
+        /// `out` must have the same length as `data`.
+        fn do_transform_pointcloud2(
+            layout: &CloudLayout,
+            fields: &[PointField],
+            data: &[u8],
+            tf: &[f64; 7],
+            out: &mut [u8],
+        ) -> Result<()>;
 
     }
 }
@@ -165,5 +193,41 @@ pub fn imu(imu: &Imu, tf: &TransformStamped) -> Option<Imu> {
         angular_velocity_covariance: out.angular_velocity_covariance,
         linear_acceleration: vector(out.linear_acceleration),
         linear_acceleration_covariance: out.linear_acceleration_covariance,
+    })
+}
+
+/// Upstream tf2::doTransform with separate input and output messages.
+pub fn pointcloud2(cloud: &PointCloud2, tf: &TransformStamped) -> Result<PointCloud2, String> {
+    let layout = ffi::CloudLayout {
+        height: cloud.height,
+        width: cloud.width,
+        is_bigendian: cloud.is_bigendian,
+        point_step: cloud.point_step,
+        row_step: cloud.row_step,
+        is_dense: cloud.is_dense,
+    };
+    let fields: Vec<ffi::PointField> = cloud
+        .fields
+        .iter()
+        .map(|f| ffi::PointField {
+            name: &f.name,
+            offset: f.offset,
+            datatype: f.datatype,
+            count: f.count,
+        })
+        .collect();
+    let mut data = vec![0u8; cloud.data.len()];
+    ffi::do_transform_pointcloud2(&layout, &fields, &cloud.data, &tf_array(tf), &mut data)
+        .map_err(|e| e.what().to_string())?;
+    Ok(PointCloud2 {
+        header: header_from_transform(tf),
+        height: cloud.height,
+        width: cloud.width,
+        fields: cloud.fields.clone(),
+        is_bigendian: cloud.is_bigendian,
+        point_step: cloud.point_step,
+        row_step: cloud.row_step,
+        data,
+        is_dense: cloud.is_dense,
     })
 }

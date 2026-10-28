@@ -6,6 +6,10 @@
 
 #include "tf2_rs_oracle/src/lib.rs.h"
 
+#include <cstring>
+#include <stdexcept>
+#include <string>
+
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
@@ -125,6 +129,53 @@ bool do_transform_imu(const ImuData& imu, const TransformArray& tf, ImuData& out
   out.linear_acceleration_covariance = result.linear_acceleration_covariance;
   return true;
 #endif
+}
+
+namespace {
+
+void fill_cloud(
+    sensor_msgs::msg::PointCloud2& cloud,
+    const CloudLayout& layout,
+    rust::Slice<const PointField> fields,
+    rust::Slice<const uint8_t> data) {
+  cloud.height = layout.height;
+  cloud.width = layout.width;
+  cloud.is_bigendian = layout.is_bigendian;
+  cloud.point_step = layout.point_step;
+  cloud.row_step = layout.row_step;
+  cloud.is_dense = layout.is_dense;
+
+  cloud.fields.clear();
+  cloud.fields.reserve(fields.size());
+  for (const auto& f : fields) {
+    sensor_msgs::msg::PointField pf;
+    pf.name = std::string(f.name);
+    pf.offset = f.offset;
+    pf.datatype = f.datatype;
+    pf.count = f.count;
+    cloud.fields.push_back(std::move(pf));
+  }
+
+  cloud.data.assign(data.data(), data.data() + data.size());
+}
+
+}  // namespace
+
+void do_transform_pointcloud2(
+    const CloudLayout& layout,
+    rust::Slice<const PointField> fields,
+    rust::Slice<const uint8_t> data,
+    const TransformArray& tf,
+    rust::Slice<uint8_t> out) {
+  if (out.size() != data.size()) {
+    throw std::invalid_argument("PointCloud2 output buffer size does not match input");
+  }
+  sensor_msgs::msg::PointCloud2 in, result;
+  fill_cloud(in, layout, fields, data);
+  tf2::doTransform(in, result, to_msg(tf));
+  if (!result.data.empty()) {
+    std::memcpy(out.data(), result.data.data(), result.data.size());
+  }
 }
 
 }  // namespace tf2_rs_oracle

@@ -5,7 +5,7 @@
 use ros_env::geometry_msgs::msg::{
     Point, Pose, PoseWithCovarianceStamped, Quaternion, Vector3, Vector3Stamped,
 };
-use ros_env::sensor_msgs::msg::Imu;
+use ros_env::sensor_msgs::msg::{Imu, PointCloud2, PointField};
 use tf2_rs::{TransformStamped, Transformable};
 use tf2_rs_oracle as oracle;
 
@@ -334,4 +334,111 @@ fn imu_matches_tf2() {
         }
     }
     stats.report("Imu");
+}
+
+/// Cloud with the given f32 fields at 4-byte offsets, in that order, plus 4
+/// padding bytes per point that are not a field.
+fn random_cloud(rng: &mut Rng, names: &[&str], points: usize) -> PointCloud2 {
+    let step = 4 * names.len() + 4;
+    let fields = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| PointField {
+            name: name.to_string(),
+            offset: 4 * i as u32,
+            datatype: 7, // FLOAT32
+            count: 1,
+        })
+        .collect();
+    let mut data = Vec::with_capacity(step * points);
+    for p in 0..points {
+        for _ in names {
+            // Lidar clouds that are not dense carry NaN points.
+            let v = if p % 17 == 3 {
+                f32::NAN
+            } else {
+                rng.range(-100.0, 100.0) as f32
+            };
+            data.extend_from_slice(&v.to_ne_bytes());
+        }
+        data.extend_from_slice(&[0xAB, 0xCD, 0xEF, p as u8]);
+    }
+    let mut cloud = PointCloud2 {
+        height: 1,
+        width: points as u32,
+        fields,
+        point_step: step as u32,
+        row_step: (step * points) as u32,
+        data,
+        is_dense: false,
+        ..Default::default()
+    };
+    cloud.header.frame_id = "laser".into();
+    cloud
+}
+
+#[test]
+fn pointcloud2_matches_tf2() {
+    let mut rng = Rng::new(15);
+    let mut stats = Stats::default();
+    let layouts: [&[&str]; 3] = [
+        &["x", "y", "z"],
+        &["intensity", "z", "x", "y"],
+        &[
+            "x",
+            "y",
+            "z",
+            "normal_x",
+            "normal_y",
+            "normal_z",
+            "curvature",
+        ],
+    ];
+    for tf in transforms(&mut rng) {
+        for names in layouts {
+            let cloud = random_cloud(&mut rng, names, 40);
+            let got = cloud.apply_transform(&tf).unwrap();
+            let want = oracle::pointcloud2(&cloud, &tf).unwrap();
+            stats.cases += 1;
+            let case = format!("fields {names:?} {tf:?}");
+            assert_eq!(got.header, want.header, "header for {case}");
+            assert_eq!(
+                (got.height, got.width, got.point_step, got.row_step),
+                (want.height, want.width, want.point_step, want.row_step),
+                "layout for {case}"
+            );
+            assert_eq!(got.fields, want.fields, "fields for {case}");
+            assert_eq!(got.data.len(), want.data.len(), "data length for {case}");
+            // Every 4-byte word, transformed fields and padding alike, compared as f32.
+            let words = |d: &[u8]| -> Vec<f64> {
+                d.chunks_exact(4)
+                    .map(|w| f32::from_ne_bytes([w[0], w[1], w[2], w[3]]) as f64)
+                    .collect()
+            };
+            stats.check("data", &words(&got.data), &words(&want.data), &case);
+        }
+    }
+    stats.report("PointCloud2");
+}
+
+#[test]
+fn pointcloud2_errors_match_tf2() {
+    let tf = make_tf([1.0, 2.0, 3.0], [0.0, 0.0, 0.0, 1.0]);
+    let mut rng = Rng::new(16);
+    for names in [
+        &["x", "y"][..],
+        &["y", "z"],
+        &["x", "y", "z", "normal_x"],
+        &["x", "y", "z", "normal_x", "normal_y"],
+    ] {
+        let cloud = random_cloud(&mut rng, names, 3);
+        let got = cloud.apply_transform(&tf);
+        let want = oracle::pointcloud2(&cloud, &tf);
+        assert!(got.is_err(), "Rust accepted fields {names:?}");
+        assert!(want.is_err(), "C++ accepted fields {names:?}");
+    }
+    // No points: both succeed and return an empty cloud.
+    let empty = random_cloud(&mut rng, &["x", "y", "z"], 0);
+    assert!(empty.apply_transform(&tf).unwrap().data.is_empty());
+    assert!(oracle::pointcloud2(&empty, &tf).unwrap().data.is_empty());
 }

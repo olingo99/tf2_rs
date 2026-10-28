@@ -3,7 +3,6 @@
 #include "tf2_rs/src/ffi.rs.h"
 
 #include <chrono>
-#include <cstring>
 #include <string>
 
 #if __has_include(<geometry_msgs/msg/transform_stamped.hpp>)
@@ -18,15 +17,6 @@
   #include <std_msgs/std_msgs/msg/header.hpp>
 #endif
 
-#if __has_include(<sensor_msgs/msg/point_cloud2.hpp>)
-  #include <sensor_msgs/msg/point_cloud2.hpp>
-  #include <sensor_msgs/msg/point_field.hpp>
-#else
-  #include <sensor_msgs/sensor_msgs/msg/point_cloud2.hpp>
-  #include <sensor_msgs/sensor_msgs/msg/point_field.hpp>
-#endif
-
-#include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 #if __has_include(<tf2/exceptions.hpp>)
   #include <tf2/exceptions.hpp>
 #elif __has_include(<tf2/tf2/exceptions.hpp>)
@@ -95,21 +85,6 @@ static geometry_msgs::msg::TransformStamped to_ros(const Tf2TransformStamped& tf
   out.transform.rotation.y = tf.tf.qy;
   out.transform.rotation.z = tf.tf.qz;
   out.transform.rotation.w = tf.tf.qw;
-
-  return out;
-}
-
-// Header and child frame stay empty: doTransform only reads the transform itself.
-static geometry_msgs::msg::TransformStamped to_ros(const Tf2Transform& tf) {
-  geometry_msgs::msg::TransformStamped out;
-  out.transform.translation.x = tf.tx;
-  out.transform.translation.y = tf.ty;
-  out.transform.translation.z = tf.tz;
-
-  out.transform.rotation.x = tf.qx;
-  out.transform.rotation.y = tf.qy;
-  out.transform.rotation.z = tf.qz;
-  out.transform.rotation.w = tf.qw;
 
   return out;
 }
@@ -199,47 +174,3 @@ std::shared_ptr<BufferCoreWrapper> new_buffer_core(uint64_t cache_time_ns) {
   return std::make_shared<BufferCoreWrapper>(cache_time_ns);
 }
 
-// ---------------- doTransform wrappers ----------------
-
-// sensor_msgs/PointCloud2
-Tf2Status do_transform_pointcloud2(
-    const Tf2CloudLayout& layout,
-    rust::Slice<const Tf2PointField> fields,
-    rust::Slice<const uint8_t> data,
-    const Tf2Transform& tf,
-    rust::Slice<uint8_t> out) {
-  return with_tf2_status([&] {
-    if (out.size() != data.size()) {
-      throw tf2::InvalidArgumentException("PointCloud2 output buffer size does not match input");
-    }
-
-    sensor_msgs::msg::PointCloud2 cloud;
-    cloud.height = layout.height;
-    cloud.width = layout.width;
-    cloud.is_bigendian = layout.is_bigendian;
-    cloud.point_step = layout.point_step;
-    cloud.row_step = layout.row_step;
-    cloud.is_dense = layout.is_dense;
-
-    cloud.fields.reserve(fields.size());
-    for (const auto& f : fields) {
-      sensor_msgs::msg::PointField pf;
-      pf.name = std::string(f.name);
-      pf.offset = f.offset;
-      pf.datatype = f.datatype;
-      pf.count = f.count;
-      cloud.fields.push_back(std::move(pf));
-    }
-
-    // Raw pointers so the copy is a single memmove.
-    cloud.data.assign(data.data(), data.data() + data.size());
-
-    // Same object as input and output: tf2 allows this, and it avoids the
-    // full copy doTransform would otherwise make with `p_out = p_in`.
-    tf2::doTransform(cloud, cloud, to_ros(tf));
-
-    if (!cloud.data.empty()) {
-      std::memcpy(out.data(), cloud.data.data(), cloud.data.size());
-    }
-  });
-}
