@@ -18,7 +18,7 @@ struct Tf2Time;
 struct Tf2Transform;
 struct Tf2TransformStamped;
 
-// New: forward declarations for status/error code (defined in cxx-generated header)
+// Forward declarations for the status and error code, also from ffi.rs.h.
 enum class Tf2Errc : int32_t;
 struct Tf2Status;
 struct Tf2CanTransformResult;
@@ -29,7 +29,7 @@ public:
 
   void clear() const;
 
-  // Now returns a status; result is written to out_ok
+  // Returns a status; the result is written to out_ok.
   Tf2Status set_transform(
       const Tf2TransformStamped& tf,
       rust::Str authority,
@@ -44,7 +44,7 @@ public:
       const Tf2Time& time,
       Tf2CanTransformResult& out) const;
 
-  // Now returns a status; transform is written to out_tf
+  // Returns a status; the transform is written to out_tf.
   Tf2Status lookup_transform(
       rust::Str target_frame,
       rust::Str source_frame,

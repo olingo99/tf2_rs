@@ -13,10 +13,7 @@ impl TimeSpec {
         match self {
             TimeSpec::Latest => LookupTime::Latest,
             TimeSpec::Stamp { sec, nanosec } => LookupTime::Time { sec, nanosec },
-            TimeSpec::FromMsg => {
-                let (sec, nanosec) = msg.stamp();
-                LookupTime::Time { sec, nanosec }
-            }
+            TimeSpec::FromMsg => LookupTime::from_msg(msg),
         }
     }
 }

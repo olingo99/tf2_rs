@@ -16,9 +16,9 @@ pub struct BufferCore {
 }
 
 impl BufferCore {
-    pub fn new(cache_time_ns: std::time::Duration) -> Self {
+    pub fn new(cache_time: std::time::Duration) -> Self {
         Self {
-            inner: ffi::new_buffer_core(cache_time_ns.as_nanos() as u64),
+            inner: ffi::new_buffer_core(cache_time.as_nanos() as u64),
         }
     }
 
@@ -45,7 +45,7 @@ impl BufferCore {
             Ok(())
         } else {
             Err(Tf2Error::InvalidArgument(
-                "buffer_set_transform rejected transform".to_string(),
+                "set_transform rejected the transform".to_string(),
             ))
         }
     }
