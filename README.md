@@ -60,7 +60,6 @@ ros-env = "0.3"
 <depend>tf2</depend>
 <depend>tf2_geometry_msgs</depend>
 <depend>tf2_msgs</depend>
-<depend>tf2_sensor_msgs</depend>
 ```
 
 Then build your workspace as usual from a sourced shell:
