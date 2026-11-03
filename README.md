@@ -238,9 +238,7 @@ on that.
 
 `send_transform` accepts a `TransformStamped` or a
 `geometry_msgs::msg::TransformStamped`, and `send_transforms` takes several.
-`StaticTransformBroadcaster` works the same way on `/tf_static`, but for now
-late subscribers only receive the transforms of its last call, so send all
-static transforms in one `send_transforms` call.
+`StaticTransformBroadcaster` works the same way on `/tf_static`.
 
 ```rust
 use rclrs::{Context, CreateBasicExecutor, RclrsError};
