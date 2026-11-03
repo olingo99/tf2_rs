@@ -15,17 +15,10 @@
 // Forward-declare all cxx-shared structs in the GLOBAL namespace.
 // The definitions come from the cxx-generated header (ffi.rs.h).
 struct Tf2Time;
-struct Tf2Header;
 struct Tf2Transform;
 struct Tf2TransformStamped;
 
-struct Tf2PointStamped;
-struct Tf2PoseStamped;
-
-struct Tf2PointField;
-struct Tf2CloudLayout;
-
-// New: forward declarations for status/error code (defined in cxx-generated header)
+// Forward declarations for the status and error code, also from ffi.rs.h.
 enum class Tf2Errc : int32_t;
 struct Tf2Status;
 struct Tf2CanTransformResult;
@@ -36,7 +29,7 @@ public:
 
   void clear() const;
 
-  // Now returns a status; result is written to out_ok
+  // Returns a status; the result is written to out_ok.
   Tf2Status set_transform(
       const Tf2TransformStamped& tf,
       rust::Str authority,
@@ -51,7 +44,7 @@ public:
       const Tf2Time& time,
       Tf2CanTransformResult& out) const;
 
-  // Now returns a status; transform is written to out_tf
+  // Returns a status; the transform is written to out_tf.
   Tf2Status lookup_transform(
       rust::Str target_frame,
       rust::Str source_frame,
@@ -63,23 +56,3 @@ private:
 };
 
 std::shared_ptr<BufferCoreWrapper> new_buffer_core(uint64_t cache_time_ns);
-
-// TF2 built-in doTransform wrappers (free functions) now return status + out-param
-Tf2Status do_transform_point_stamped(
-    const Tf2PointStamped& input,
-    const Tf2TransformStamped& tf,
-    Tf2PointStamped& out);
-
-Tf2Status do_transform_pose_stamped(
-    const Tf2PoseStamped& input,
-    const Tf2TransformStamped& tf,
-    Tf2PoseStamped& out);
-
-// `out` must have the same length as `data`. The header is not touched here;
-// the caller sets it from the transform.
-Tf2Status do_transform_pointcloud2(
-    const Tf2CloudLayout& layout,
-    rust::Slice<const Tf2PointField> fields,
-    rust::Slice<const uint8_t> data,
-    const Tf2Transform& tf,
-    rust::Slice<uint8_t> out);

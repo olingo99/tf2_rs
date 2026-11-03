@@ -4,8 +4,9 @@ on:
   push:
     branches: [master]
   pull_request:
-  # Weekly run to catch new ROS binary syncs; its latest-compatible job also
-  # tests newer semver-compatible crate releases than the committed Cargo.lock.
+  # Weekly run to catch updated ros:<distro> images, which pick up ROS binary
+  # syncs when they are rebuilt; its latest-compatible job also tests newer
+  # semver-compatible crate releases than the committed Cargo.lock.
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
@@ -36,6 +37,13 @@ jobs:
           docker run --rm tf2_rs:${{ matrix.distro }}
           bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo test --locked'
 
+      # Checks the Rust transforms against upstream C++ tf2 (oracle/). libstdc++
+      # assertions make undefined C++ fail the same way on every distro.
+      - name: Parity with C++ tf2
+        run: >
+          docker run --rm tf2_rs:${{ matrix.distro }}
+          bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && CXXFLAGS=-D_GLIBCXX_ASSERTIONS cargo test --locked -p tf2_rs_oracle'
+
       # Follows the README "From crates.io" instructions in a new ROS package,
       # using the files `cargo package` would upload, and runs the README examples.
       - name: Test crates.io installation
@@ -49,8 +57,39 @@ jobs:
           docker run --rm tf2_rs:${{ matrix.distro }}
           bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs &&
           cargo fmt --all -- --check &&
-          cargo clippy --all-targets --all-features --locked -- -D warnings &&
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings &&
           cargo doc --no-deps --locked'
+
+  # Runs the parity tests on arm64, where GCC fuses `a * b + c` (FMA) by default,
+  # so upstream and Rust differ in the last bits. Expected to FAIL, and does not
+  # block a PR: the tests allow a tolerance there, but not the known edge cases,
+  # all measured as harmless under qemu for every type (see the README):
+  # - `-q` instead of `q` for some 180° rotations (the same rotation),
+  # - NaN instead of inf when an input is infinite,
+  # - a `VelocityStamped` whose 1e300 inputs cancel to a 1e284 result.
+  # A failure is only worth reading if it names something else.
+  arm64:
+    name: arm64 / ${{ matrix.distro }}
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [jazzy, rolling]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build
+        run: >
+          docker build -f docker/Dockerfile
+          --build-arg ROS_DISTRO=${{ matrix.distro }}
+          -t tf2_rs:${{ matrix.distro }} .
+
+      - name: Parity with C++ tf2
+        run: >
+          docker run --rm tf2_rs:${{ matrix.distro }}
+          bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs &&
+          cargo test --locked --release -p tf2_rs_oracle -- --nocapture'
 
   # This intentionally updates the lockfile. It is an early-warning job for
   # new semver-compatible crate releases; normal PR and release builds above
@@ -74,3 +113,8 @@ jobs:
           docker build -f docker/Dockerfile --build-arg ROS_DISTRO=${{ matrix.distro }} -t tf2_rs:latest-${{ matrix.distro }} .
           docker run --rm tf2_rs:latest-${{ matrix.distro }} \
             bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && cargo test --locked'
+
+      - name: Parity with C++ tf2 on latest compatible versions
+        run: >
+          docker run --rm tf2_rs:latest-${{ matrix.distro }}
+          bash -c '. /opt/ros/$ROS_DISTRO/setup.sh && cd src/tf2_rs && CXXFLAGS=-D_GLIBCXX_ASSERTIONS cargo test --locked -p tf2_rs_oracle'

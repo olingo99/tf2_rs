@@ -1,5 +1,5 @@
 use crate::ffi::ffi;
-use ros_env::geometry_msgs;
+use ros_env::{builtin_interfaces, geometry_msgs, std_msgs};
 
 #[derive(Clone, Debug)]
 pub struct TransformStamped {
@@ -12,7 +12,7 @@ pub struct TransformStamped {
 }
 
 impl TransformStamped {
-    pub fn to_ffi(&self) -> ffi::Tf2TransformStamped {
+    pub(crate) fn to_ffi(&self) -> ffi::Tf2TransformStamped {
         ffi::Tf2TransformStamped {
             stamp: ffi::Tf2Time {
                 sec: self.stamp_sec,
@@ -36,7 +36,7 @@ impl TransformStamped {
         }
     }
 
-    pub fn from_ffi(v: ffi::Tf2TransformStamped) -> Self {
+    pub(crate) fn from_ffi(v: ffi::Tf2TransformStamped) -> Self {
         Self {
             stamp_sec: v.stamp.sec,
             stamp_nanosec: v.stamp.nanosec,
@@ -48,48 +48,93 @@ impl TransformStamped {
     }
 }
 
+impl From<&geometry_msgs::msg::TransformStamped> for TransformStamped {
+    fn from(t: &geometry_msgs::msg::TransformStamped) -> Self {
+        TransformStamped {
+            stamp_sec: t.header.stamp.sec,
+            stamp_nanosec: t.header.stamp.nanosec,
+            parent_frame: t.header.frame_id.clone(),
+            child_frame: t.child_frame_id.clone(),
+            translation: [
+                t.transform.translation.x,
+                t.transform.translation.y,
+                t.transform.translation.z,
+            ],
+            rotation: [
+                t.transform.rotation.x,
+                t.transform.rotation.y,
+                t.transform.rotation.z,
+                t.transform.rotation.w,
+            ],
+        }
+    }
+}
+
 impl From<TransformStamped> for geometry_msgs::msg::TransformStamped {
     fn from(t: TransformStamped) -> Self {
-        let mut msg = geometry_msgs::msg::TransformStamped::default();
-
-        msg.header.stamp.sec = t.stamp_sec;
-        msg.header.stamp.nanosec = t.stamp_nanosec;
-        msg.header.frame_id = t.parent_frame;
-
-        msg.child_frame_id = t.child_frame;
-
-        msg.transform.translation.x = t.translation[0];
-        msg.transform.translation.y = t.translation[1];
-        msg.transform.translation.z = t.translation[2];
-
-        msg.transform.rotation.x = t.rotation[0];
-        msg.transform.rotation.y = t.rotation[1];
-        msg.transform.rotation.z = t.rotation[2];
-        msg.transform.rotation.w = t.rotation[3];
-
-        msg
+        let [x, y, z] = t.translation;
+        let [qx, qy, qz, qw] = t.rotation;
+        // Built directly: the generated `default()` goes through the C message init
+        // and conversion.
+        Self {
+            header: std_msgs::msg::Header {
+                stamp: builtin_interfaces::msg::Time {
+                    sec: t.stamp_sec,
+                    nanosec: t.stamp_nanosec,
+                },
+                frame_id: t.parent_frame,
+            },
+            child_frame_id: t.child_frame,
+            transform: geometry_msgs::msg::Transform {
+                translation: geometry_msgs::msg::Vector3 { x, y, z },
+                rotation: geometry_msgs::msg::Quaternion {
+                    x: qx,
+                    y: qy,
+                    z: qz,
+                    w: qw,
+                },
+            },
+        }
     }
 }
 
 impl From<&TransformStamped> for geometry_msgs::msg::TransformStamped {
     fn from(t: &TransformStamped) -> Self {
-        let mut msg = geometry_msgs::msg::TransformStamped::default();
+        t.clone().into()
+    }
+}
 
-        msg.header.stamp.sec = t.stamp_sec;
-        msg.header.stamp.nanosec = t.stamp_nanosec;
-        msg.header.frame_id = t.parent_frame.clone();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        msg.child_frame_id = t.child_frame.clone();
+    #[test]
+    fn conversions_to_and_from_the_message_keep_every_field() {
+        let tf = TransformStamped {
+            stamp_sec: 1,
+            stamp_nanosec: 2,
+            parent_frame: "map".into(),
+            child_frame: "base_link".into(),
+            translation: [3.0, 4.0, 5.0],
+            rotation: [6.0, 7.0, 8.0, 9.0],
+        };
 
-        msg.transform.translation.x = t.translation[0];
-        msg.transform.translation.y = t.translation[1];
-        msg.transform.translation.z = t.translation[2];
+        let msg: geometry_msgs::msg::TransformStamped = (&tf).into();
+        assert_eq!((msg.header.stamp.sec, msg.header.stamp.nanosec), (1, 2));
+        assert_eq!(msg.header.frame_id, "map");
+        assert_eq!(msg.child_frame_id, "base_link");
+        let (t, q) = (&msg.transform.translation, &msg.transform.rotation);
+        assert_eq!([t.x, t.y, t.z], tf.translation);
+        assert_eq!([q.x, q.y, q.z, q.w], tf.rotation);
 
-        msg.transform.rotation.x = t.rotation[0];
-        msg.transform.rotation.y = t.rotation[1];
-        msg.transform.rotation.z = t.rotation[2];
-        msg.transform.rotation.w = t.rotation[3];
+        let back: TransformStamped = (&msg).into();
+        assert_eq!((back.stamp_sec, back.stamp_nanosec), (1, 2));
+        assert_eq!(back.parent_frame, "map");
+        assert_eq!(back.child_frame, "base_link");
+        assert_eq!(back.translation, tf.translation);
+        assert_eq!(back.rotation, tf.rotation);
 
-        msg
+        let owned: geometry_msgs::msg::TransformStamped = tf.clone().into();
+        assert_eq!(owned.child_frame_id, msg.child_frame_id);
     }
 }
