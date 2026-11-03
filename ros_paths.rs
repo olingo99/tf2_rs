@@ -90,3 +90,25 @@ fn link_search(prefixes: &[PathBuf]) {
         }
     }
 }
+
+/// Whether the header `rel` (as in `#include <rel>`) contains `needle`, so the
+/// build can follow what the installed version does rather than the distro name.
+/// The first include dir that has it wins, as for the compiler. Panics if no dir
+/// has it: answering false would silently build another version's behaviour.
+fn header_contains(include_dirs: &[PathBuf], rel: &str, needle: &str) -> bool {
+    let Some(path) = include_dirs
+        .iter()
+        .map(|d| d.join(rel))
+        .find(|p| p.is_file())
+    else {
+        let package = rel.split('/').next().unwrap_or(rel);
+        panic!(
+            "cannot find <{rel}> in the ROS include directories. Install {package} \
+             and list it in your package.xml (see the tf2_rs README)."
+        );
+    };
+    println!("cargo:rerun-if-changed={}", path.display());
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    text.contains(needle)
+}
