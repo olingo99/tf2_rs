@@ -29,15 +29,70 @@ mod test_support;
 use crate::{Tf2Error, TransformStamped};
 use ros_env::{builtin_interfaces, std_msgs};
 
+/// A message that knows its frame and time, so
+/// [`BufferCore::transform`](crate::BufferCore::transform) can look up its
+/// transform.
+///
+/// For a type with a `std_msgs/Header` field named `header`,
+/// [`impl_has_header_for_ros2_msg!`](crate::impl_has_header_for_ros2_msg)
+/// implements it.
 pub trait HasHeader {
+    /// The frame the data is expressed in.
     fn frame_id(&self) -> &str;
+    /// The time of the data, as `(sec, nanosec)`.
     fn stamp(&self) -> (i32, u32);
 }
 
+/// A message that a transform can be applied to.
+///
+/// Implemented for every message that `tf2_geometry_msgs` and `tf2_sensor_msgs`
+/// transform; see the [crate documentation](crate#supported-messages). Implement
+/// it for your own types to use [`do_transform`], and [`HasHeader`] as well to
+/// use [`BufferCore::transform`](crate::BufferCore::transform):
+///
+/// ```
+/// use ros_env::{geometry_msgs::msg::Point, std_msgs::msg::Header};
+/// use tf2_rs::{Tf2Error, Transformable, TransformStamped, do_transform};
+///
+/// struct Landmark {
+///     header: Header,
+///     position: Point,
+/// }
+///
+/// tf2_rs::impl_has_header_for_ros2_msg!(Landmark);
+///
+/// impl Transformable for Landmark {
+///     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+///         Ok(Self {
+///             // As in tf2: the frame and stamp of the transform.
+///             header: Header {
+///                 stamp: ros_env::builtin_interfaces::msg::Time {
+///                     sec: tf.stamp_sec,
+///                     nanosec: tf.stamp_nanosec,
+///                 },
+///                 frame_id: tf.parent_frame.clone(),
+///             },
+///             position: do_transform(&self.position, tf)?,
+///         })
+///     }
+/// }
+/// ```
+///
+/// Rust only lets you implement it for a type defined in your crate. For a ROS
+/// message, such as one `tf2_rs` does not support, wrap it in a struct of your
+/// own and implement it on that.
 pub trait Transformable: Sized {
+    /// Applies `tf` to `self`. As in tf2, a message with a header takes the
+    /// stamp and parent frame of `tf`, except `VelocityStamped` on Humble to
+    /// Kilted, which keeps its own as upstream does there.
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error>;
 }
 
+/// Applies `tf` to `input`, like `tf2::doTransform`. `tf` usually comes from
+/// [`BufferCore::lookup_transform`](crate::BufferCore::lookup_transform).
+///
+/// Use it for messages without a header, or to apply one transform to several
+/// messages.
 pub fn do_transform<T: Transformable>(input: &T, tf: &TransformStamped) -> Result<T, Tf2Error> {
     input.apply_transform(tf)
 }
@@ -56,6 +111,19 @@ pub(crate) fn header_from_transform(tf: &TransformStamped) -> std_msgs::msg::Hea
     }
 }
 
+/// Implements [`HasHeader`](crate::HasHeader) for a type with a
+/// `std_msgs/Header` field named `header`.
+///
+/// ```
+/// use ros_env::std_msgs::msg::Header;
+///
+/// struct Detection {
+///     header: Header,
+///     score: f32,
+/// }
+///
+/// tf2_rs::impl_has_header_for_ros2_msg!(Detection);
+/// ```
 #[macro_export]
 macro_rules! impl_has_header_for_ros2_msg {
     ($ty:ty) => {
