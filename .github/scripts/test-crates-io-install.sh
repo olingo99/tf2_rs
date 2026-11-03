@@ -2,7 +2,8 @@
 # Follows the "From crates.io" instructions in README.md: creates a new
 # ament_cargo package from the Cargo.toml and package.xml snippets in the
 # README, adds every Rust example of the Usage section as a binary, builds it
-# with colcon and runs the examples that terminate on their own.
+# with colcon and runs the examples that terminate on their own. The other Rust
+# examples in the README are built too, but not run, so they keep compiling.
 #
 # By default tf2_rs comes from `cargo package`, i.e. exactly the files that
 # would be uploaded to crates.io. With --from-crates-io the published crate is
@@ -56,6 +57,7 @@ dependencies = blocks(install, "toml")[0]
 depends = blocks(install, "xml")[0]
 examples = blocks(section("## Usage"), "rust")
 assert examples, "no Rust examples found in the Usage section"
+snippets = [code for code in blocks(readme, "rust") if code not in examples]
 
 # A registry verification must install the tag being released, not merely the
 # newest version allowed by a possibly stale README requirement. The ordinary
@@ -96,7 +98,13 @@ if patch_path:
 
 for i, code in enumerate(examples, 1):
     (pkg / "src" / "bin" / f"example_{i}.rs").write_text(code)
-print(f"generated tf2_rs_consumer with {len(examples)} README examples")
+# Snippets without a main only declare types; they are built, not run.
+for i, code in enumerate(snippets, 1):
+    if "fn main" not in code:
+        code = "#![allow(dead_code)]\n" + code + "\nfn main() {}\n"
+    (pkg / "src" / "bin" / f"snippet_{i}.rs").write_text(code)
+print(f"generated tf2_rs_consumer with {len(examples)} README examples "
+      f"and {len(snippets)} snippets")
 EOF
 
 cd "$ws"
