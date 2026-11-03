@@ -1,14 +1,27 @@
+//! [`TransformStamped`], the transform type of the buffer.
+
 use crate::ffi::ffi;
 use ros_env::{builtin_interfaces, geometry_msgs, std_msgs};
 
+/// A transform between two frames at a given time, as stored in and returned by
+/// [`BufferCore`](crate::BufferCore).
+///
+/// It converts to and from `geometry_msgs::msg::TransformStamped`. To transform
+/// that message itself, use [`do_transform`](crate::do_transform).
 #[derive(Clone, Debug)]
 pub struct TransformStamped {
+    /// Seconds of the time the transform is valid at.
     pub stamp_sec: i32,
+    /// Nanoseconds of the time the transform is valid at.
     pub stamp_nanosec: u32,
+    /// The frame the transform expresses data in (`header.frame_id`).
     pub parent_frame: String,
+    /// The frame of the data it transforms (`child_frame_id`).
     pub child_frame: String,
+    /// Translation `[x, y, z]`.
     pub translation: [f64; 3],
-    pub rotation: [f64; 4], // x,y,z,w
+    /// Rotation as a quaternion `[x, y, z, w]`.
+    pub rotation: [f64; 4],
 }
 
 impl TransformStamped {
