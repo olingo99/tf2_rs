@@ -1,11 +1,11 @@
-use crate::Tf2Error;
-use crate::TransformStamped;
 use crate::transform::{Transformable, header_from_transform, math};
+use crate::{Tf2Error, TransformStamped};
 use ros_env::geometry_msgs::msg::{Quaternion, Vector3};
-use ros_env::sensor_msgs;
+use ros_env::sensor_msgs::msg::{Imu, MagneticField, PointCloud2};
 
-crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::PointCloud2);
-crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::Imu);
+crate::impl_has_header_for_ros2_msg!(PointCloud2);
+crate::impl_has_header_for_ros2_msg!(Imu);
+crate::impl_has_header_for_ros2_msg!(MagneticField);
 
 /// Follows tf2_sensor_msgs. The fields named `x`, `y`, `z` (and `normal_x`,
 /// `normal_y`, `normal_z` when `normal_x` exists) are read as native-endian `f32`
@@ -17,7 +17,7 @@ crate::impl_has_header_for_ros2_msg!(sensor_msgs::msg::Imu);
 /// Where the C++ code would read out of bounds (a field that does not fit in
 /// `point_step`, or `data` not a whole number of points), this returns
 /// `InvalidArgument` instead.
-impl Transformable for sensor_msgs::msg::PointCloud2 {
+impl Transformable for PointCloud2 {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
         let step = self.point_step as usize;
         let offset = |name: &str| {
@@ -59,10 +59,6 @@ impl Transformable for sensor_msgs::msg::PointCloud2 {
 
         let r = math::eigen_rotation_f32(tf.rotation.map(|v| v as f32));
         let t = tf.translation.map(|v| v as f32);
-        // Eigen's affine product: R * v + t, summed in this order.
-        let apply = |v: [f32; 3], t: [f32; 3]| -> [f32; 3] {
-            std::array::from_fn(|i| r[i][0] * v[0] + r[i][1] * v[1] + r[i][2] * v[2] + t[i])
-        };
         // Read from the input and write to the copy, as C++ reads p_in and writes
         // p_out: overlapping fields then give the same result.
         let mut data = self.data.clone();
@@ -72,16 +68,22 @@ impl Transformable for sensor_msgs::msg::PointCloud2 {
                 .chunks_exact(step)
                 .zip(data.chunks_exact_mut(step))
             {
-                write_f32x3(dst, xyz, apply(read_f32x3(src, xyz), t));
+                write_f32x3(
+                    dst,
+                    xyz,
+                    math::eigen_affine_f32(&r, t, read_f32x3(src, xyz)),
+                );
                 if let Some(n) = normals {
-                    // Translation (0, 0, 0) is still added, as Eigen does; it turns
-                    // -0.0 into 0.0.
-                    write_f32x3(dst, n, apply(read_f32x3(src, n), [0.0; 3]));
+                    write_f32x3(
+                        dst,
+                        n,
+                        math::eigen_affine_f32(&r, [0.0; 3], read_f32x3(src, n)),
+                    );
                 }
             }
         }
 
-        Ok(sensor_msgs::msg::PointCloud2 {
+        Ok(PointCloud2 {
             header: header_from_transform(tf),
             height: self.height,
             width: self.width,
@@ -113,17 +115,17 @@ fn write_f32x3(p: &mut [u8], [a, b, c]: [usize; 3], v: [f32; 3]) {
 /// covariances are rotated into the new frame. The orientation describes the
 /// sensor in a fixed world frame, so it is composed with the inverse rotation,
 /// and its covariance is unchanged.
-impl Transformable for sensor_msgs::msg::Imu {
+impl Transformable for Imu {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
         let r = tf.rotation;
         let m = math::eigen_rotation(r);
         let rotate = |v: &Vector3| {
-            let [x, y, z] = math::mat_vec(&m, [v.x, v.y, v.z]);
+            let [x, y, z] = math::eigen_rotate(&m, [v.x, v.y, v.z]);
             Vector3 { x, y, z }
         };
         let o = &self.orientation;
         let [x, y, z, w] = math::eigen_quat_mul([o.x, o.y, o.z, o.w], math::eigen_inverse(r));
-        Ok(sensor_msgs::msg::Imu {
+        Ok(Imu {
             header: header_from_transform(tf),
             orientation: Quaternion { x, y, z, w },
             orientation_covariance: self.orientation_covariance,
@@ -141,13 +143,34 @@ impl Transformable for sensor_msgs::msg::Imu {
     }
 }
 
+/// Follows tf2_sensor_msgs (Jazzy and later; Humble's C++ has no MagneticField
+/// transform). Only the rotation is used: the field and its covariance are rotated
+/// into the new frame.
+impl Transformable for MagneticField {
+    fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+        let m = &self.magnetic_field;
+        let [x, y, z] = math::eigen_rotate(&math::eigen_rotation(tf.rotation), [m.x, m.y, m.z]);
+        Ok(MagneticField {
+            header: header_from_transform(tf),
+            magnetic_field: Vector3 { x, y, z },
+            magnetic_field_covariance: math::rotate_covariance3(
+                &self.magnetic_field_covariance,
+                tf.rotation,
+            ),
+        })
+    }
+}
+
 #[cfg(test)]
-mod imu_tests {
+mod tests {
     use super::*;
     use crate::HasHeader;
     use crate::transform::test_support::{Rng, assert_close, make_tf, rotate_by_quat};
+    use ros_env::sensor_msgs::msg::PointField;
 
     const S: f64 = std::f64::consts::FRAC_1_SQRT_2;
+    // ROS PointField datatype enum: FLOAT32 == 7.
+    const PF_FLOAT32: u8 = 7;
 
     fn vec3(v: &Vector3) -> [f64; 3] {
         [v.x, v.y, v.z]
@@ -156,7 +179,7 @@ mod imu_tests {
     #[test]
     fn imu_is_rotated_without_translation() {
         let tf = make_tf([10.0, 20.0, 30.0], [0.0, 0.0, S, S]); // 90 deg yaw
-        let mut imu = sensor_msgs::msg::Imu::default();
+        let mut imu = Imu::default();
         imu.header.frame_id = "imu_link".into();
         imu.orientation.w = 1.0;
         imu.orientation_covariance = [0.1, 0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.3];
@@ -204,11 +227,43 @@ mod imu_tests {
     }
 
     #[test]
+    fn magnetic_field_is_rotated_without_translation() {
+        let mut tf = make_tf([10.0, 20.0, 30.0], [0.0, 0.0, S, S]); // 90 deg yaw
+        tf.stamp_sec = 7;
+        tf.stamp_nanosec = 8;
+        let msg = MagneticField {
+            magnetic_field: Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            magnetic_field_covariance: [1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0],
+            ..Default::default()
+        };
+        let out = msg.apply_transform(&tf).unwrap();
+        assert_close(
+            &vec3(&out.magnetic_field),
+            &[0.0, 1.0, 0.0],
+            1e-12,
+            "magnetic field",
+        );
+        let c = out.magnetic_field_covariance;
+        assert_close(
+            &[c[0], c[4], c[8]],
+            &[2.0, 1.0, 3.0],
+            1e-12,
+            "covariance diagonal",
+        );
+        assert_eq!(out.frame_id(), "map");
+        assert_eq!(out.stamp(), (7, 8));
+    }
+
+    #[test]
     fn random_imu_transforms_match_independent_math() {
         let mut rng = Rng::new(2);
         for _ in 0..2000 {
             let tf = make_tf(rng.vec3(100.0), rng.unit_quat());
-            let mut imu = sensor_msgs::msg::Imu::default();
+            let mut imu = Imu::default();
             let q = rng.unit_quat();
             imu.orientation = Quaternion {
                 x: q[0],
@@ -258,34 +313,9 @@ mod imu_tests {
             );
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ROS PointField datatype enum: FLOAT32 == 7.
-    const PF_FLOAT32: u8 = 7;
-
-    fn make_tf(
-        parent_frame: &str, // target frame (tf header.frame_id)
-        child_frame: &str,  // source frame (tf child_frame_id)
-        translation: [f64; 3],
-        rotation_xyzw: [f64; 4],
-        stamp: (i32, u32),
-    ) -> crate::TransformStamped {
-        crate::TransformStamped {
-            stamp_sec: stamp.0,
-            stamp_nanosec: stamp.1,
-            parent_frame: parent_frame.to_string(),
-            child_frame: child_frame.to_string(),
-            translation,
-            rotation: rotation_xyzw,
-        }
-    }
-
-    fn make_xyz_cloud(frame: &str, points: &[[f32; 3]]) -> sensor_msgs::msg::PointCloud2 {
-        let mut cloud = sensor_msgs::msg::PointCloud2::default();
+    fn make_xyz_cloud(frame: &str, points: &[[f32; 3]]) -> PointCloud2 {
+        let mut cloud = PointCloud2::default();
 
         cloud.header.frame_id = frame.to_string();
         cloud.header.stamp.sec = 0;
@@ -296,21 +326,21 @@ mod tests {
         cloud.is_bigendian = false;
         cloud.is_dense = true;
 
-        let x = sensor_msgs::msg::PointField {
+        let x = PointField {
             name: "x".to_string(),
             offset: 0,
             datatype: PF_FLOAT32,
             count: 1,
         };
 
-        let y = sensor_msgs::msg::PointField {
+        let y = PointField {
             name: "y".to_string(),
             offset: 4,
             datatype: PF_FLOAT32,
             count: 1,
         };
 
-        let z = sensor_msgs::msg::PointField {
+        let z = PointField {
             name: "z".to_string(),
             offset: 8,
             datatype: PF_FLOAT32,
@@ -332,7 +362,7 @@ mod tests {
         cloud
     }
 
-    fn read_xyz_cloud(cloud: &sensor_msgs::msg::PointCloud2) -> Vec<[f32; 3]> {
+    fn read_xyz_cloud(cloud: &PointCloud2) -> Vec<[f32; 3]> {
         assert_eq!(cloud.point_step, 12, "test helper assumes point_step=12");
         cloud
             .data
@@ -346,22 +376,11 @@ mod tests {
             .collect()
     }
 
-    fn assert_near(a: f32, b: f32, eps: f32, label: &str) {
-        if (a - b).abs() > eps {
-            panic!("{label}: {a} vs {b} (eps={eps})");
-        }
-    }
-
     #[test]
     fn transform_pointcloud2_translation_only() {
-        // Transform from "lidar" (source) into "map" (target)
-        let tf = make_tf(
-            "map",
-            "lidar",
-            [10.0, -2.0, 0.5],
-            [0.0, 0.0, 0.0, 1.0], // identity quaternion
-            (123, 456),
-        );
+        let mut tf = make_tf([10.0, -2.0, 0.5], [0.0, 0.0, 0.0, 1.0]); // identity quaternion
+        tf.stamp_sec = 123;
+        tf.stamp_nanosec = 456;
 
         let cloud_in = make_xyz_cloud("lidar", &[[1.0, 2.0, 3.0]]);
         let cloud_out = cloud_in
@@ -369,23 +388,20 @@ mod tests {
             .expect("transform should succeed");
 
         // tf2_sensor_msgs does: p_out = p_in; p_out.header = t_in.header;
-        // So output header should match the transform header. :contentReference[oaicite:2]{index=2}
+        // So output header should match the transform header.
         assert_eq!(cloud_out.header.frame_id, "map");
         assert_eq!(cloud_out.header.stamp.sec, 123);
         assert_eq!(cloud_out.header.stamp.nanosec, 456);
 
         let pts = read_xyz_cloud(&cloud_out);
         assert_eq!(pts.len(), 1);
-        assert_near(pts[0][0], 11.0, 1e-5, "x");
-        assert_near(pts[0][1], 0.0, 1e-5, "y");
-        assert_near(pts[0][2], 3.5, 1e-5, "z");
+        assert_close(&pts[0].map(f64::from), &[11.0, 0.0, 3.5], 1e-5, "point");
     }
 
     #[test]
     fn transform_pointcloud2_rotate_z_90deg() {
         // 90 deg yaw about +Z: q = [0,0,sin(pi/4),cos(pi/4)]
-        let s = (0.5f64).sqrt();
-        let tf = make_tf("map", "lidar", [0.0, 0.0, 0.0], [0.0, 0.0, s, s], (0, 0));
+        let tf = make_tf([0.0, 0.0, 0.0], [0.0, 0.0, S, S]);
 
         let cloud_in = make_xyz_cloud("lidar", &[[1.0, 0.0, 0.0]]);
         let cloud_out = cloud_in
@@ -396,13 +412,11 @@ mod tests {
         assert_eq!(pts.len(), 1);
 
         // (1,0,0) rotated +90deg about Z -> (0,1,0)
-        assert_near(pts[0][0], 0.0, 1e-5, "x");
-        assert_near(pts[0][1], 1.0, 1e-5, "y");
-        assert_near(pts[0][2], 0.0, 1e-5, "z");
+        assert_close(&pts[0].map(f64::from), &[0.0, 1.0, 0.0], 1e-5, "point");
     }
 
-    // Layout with normals and an extra field, to check that the in-place C++ call
-    // rotates normals without translating them and leaves other fields alone.
+    // Layout with normals and an extra field, to check that normals are rotated
+    // without being translated and other fields are left alone.
     #[test]
     fn transform_pointcloud2_normals_and_extra_fields() {
         let names = [
@@ -419,7 +433,7 @@ mod tests {
             [0.0, 2.0, 5.0, 0.0, 0.0, 1.0, 7.0],
         ];
 
-        let mut cloud = sensor_msgs::msg::PointCloud2::default();
+        let mut cloud = PointCloud2::default();
         cloud.header.frame_id = "lidar".to_string();
         cloud.height = 1;
         cloud.width = points.len() as u32;
@@ -427,7 +441,7 @@ mod tests {
         cloud.fields = names
             .iter()
             .enumerate()
-            .map(|(i, name)| sensor_msgs::msg::PointField {
+            .map(|(i, name)| PointField {
                 name: name.to_string(),
                 offset: 4 * i as u32,
                 datatype: PF_FLOAT32,
@@ -444,8 +458,7 @@ mod tests {
         let data_in = cloud.data.clone();
 
         // 90 deg yaw about +Z plus a translation.
-        let s = (0.5f64).sqrt();
-        let tf = make_tf("map", "lidar", [10.0, 20.0, 30.0], [0.0, 0.0, s, s], (5, 6));
+        let tf = make_tf([10.0, 20.0, 30.0], [0.0, 0.0, S, S]);
         let out = cloud
             .apply_transform(&tf)
             .expect("transform should succeed");
@@ -456,32 +469,24 @@ mod tests {
         assert_eq!(out.point_step, 28);
         assert_eq!(out.data.len(), cloud.data.len());
 
-        let got: Vec<f32> = out
+        let got: Vec<f64> = out
             .data
             .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()).into())
             .collect();
-        let expected: [f32; 14] = [
+        let expected = [
             10.0, 21.0, 30.0, 0.0, 1.0, 0.0, 42.0, // point 0
             8.0, 20.0, 35.0, 0.0, 0.0, 1.0, 7.0, // point 1
         ];
-        for (i, (g, e)) in got.iter().zip(expected).enumerate() {
-            assert_near(*g, e, 1e-4, &format!("value {i}"));
-        }
+        assert_close(&got, &expected, 1e-4, "values");
     }
 
     #[test]
     fn transform_pointcloud2_missing_xyz_fields_returns_err() {
-        let tf = make_tf(
-            "map",
-            "lidar",
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            (0, 0),
-        );
+        let tf = make_tf([0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]);
 
         // Malformed cloud: no fields at all, but has 12 bytes of data.
-        let mut cloud = sensor_msgs::msg::PointCloud2::default();
+        let mut cloud = PointCloud2::default();
         cloud.header.frame_id = "lidar".to_string();
         cloud.height = 1;
         cloud.width = 1;
@@ -495,7 +500,7 @@ mod tests {
         assert!(
             matches!(
                 res,
-                Err(crate::Tf2Error::InvalidArgument(_)) | Err(crate::Tf2Error::Other(_))
+                Err(Tf2Error::InvalidArgument(_)) | Err(Tf2Error::Other(_))
             ),
             "expected an error for malformed PointCloud2, got: {res:?}"
         );

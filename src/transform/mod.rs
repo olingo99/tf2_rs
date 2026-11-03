@@ -1,6 +1,28 @@
-pub mod geometry_msgs;
+/// Implements `HasHeader` and `Transformable` for a stamped message made of a
+/// header and one transformable field: the field is transformed and the header
+/// comes from the transform. Defined above the modules that use it, because a
+/// `macro_rules!` macro is only visible to the code after it.
+macro_rules! impl_stamped {
+    ($stamped:ty, $field:ident) => {
+        $crate::impl_has_header_for_ros2_msg!($stamped);
+
+        impl $crate::Transformable for $stamped {
+            fn apply_transform(
+                &self,
+                tf: &$crate::TransformStamped,
+            ) -> Result<Self, $crate::Tf2Error> {
+                Ok(Self {
+                    header: $crate::transform::header_from_transform(tf),
+                    $field: $crate::Transformable::apply_transform(&self.$field, tf)?,
+                })
+            }
+        }
+    };
+}
+
+mod geometry_msgs;
 mod math;
-pub mod sensor_msgs;
+mod sensor_msgs;
 #[cfg(test)]
 mod test_support;
 

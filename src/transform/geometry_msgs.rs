@@ -1,105 +1,226 @@
-use super::math;
-use crate::Tf2Error;
-use crate::transform::{Transformable, header_from_transform};
-use crate::transform_stamped::TransformStamped;
-use ros_env::geometry_msgs;
+use crate::transform::{Transformable, header_from_transform, math};
+use crate::{Tf2Error, TransformStamped};
 use ros_env::geometry_msgs::msg::{
-    Point, Pose, PoseWithCovariance, PoseWithCovarianceStamped, Quaternion, Vector3, Vector3Stamped,
+    Point, Point32, PointStamped, Polygon, PolygonStamped, Pose, PoseStamped, PoseWithCovariance,
+    PoseWithCovarianceStamped, Quaternion, QuaternionStamped, Transform,
+    TransformStamped as TransformStampedMsg, Twist, Vector3, Vector3Stamped, VelocityStamped,
+    Wrench, WrenchStamped,
 };
 
-impl From<&geometry_msgs::msg::TransformStamped> for TransformStamped {
-    fn from(t: &geometry_msgs::msg::TransformStamped) -> Self {
-        TransformStamped {
-            stamp_sec: t.header.stamp.sec,
-            stamp_nanosec: t.header.stamp.nanosec,
-            parent_frame: t.header.frame_id.clone(),
-            child_frame: t.child_frame_id.clone(),
-            translation: [
-                t.transform.translation.x,
-                t.transform.translation.y,
-                t.transform.translation.z,
-            ],
-            rotation: [
-                t.transform.rotation.x,
-                t.transform.rotation.y,
-                t.transform.rotation.z,
-                t.transform.rotation.w,
-            ],
-        }
-    }
-}
-
-crate::impl_has_header_for_ros2_msg!(Vector3Stamped);
-crate::impl_has_header_for_ros2_msg!(PoseWithCovarianceStamped);
-
 // The geometry_msgs conversions follow tf2_geometry_msgs, which applies the
-// transform as a KDL frame. Covariances are rotated with tf2's Matrix3x3, which
-// normalises the quaternion where KDL does not; see `math`.
+// transform as a KDL frame. Covariances and velocities use tf2's Matrix3x3, which
+// normalises the quaternion where KDL does not, and quaternions use tf2's product;
+// see `math`.
 
-fn transform_point(tf: &TransformStamped, p: math::Vec3) -> math::Vec3 {
-    let [x, y, z] = math::mat_vec(&math::kdl_rotation(tf.rotation), p);
-    [
-        x + tf.translation[0],
-        y + tf.translation[1],
-        z + tf.translation[2],
-    ]
+fn vec3(v: &Vector3) -> math::Vec3 {
+    [v.x, v.y, v.z]
 }
 
-fn transform_pose(tf: &TransformStamped, pose: &Pose) -> Pose {
-    let r = math::kdl_rotation(tf.rotation);
-    let [px, py, pz] = math::mat_vec(&r, [pose.position.x, pose.position.y, pose.position.z]);
-    let o = &pose.orientation;
-    let rotation = math::mat_mul(&r, &math::kdl_rotation([o.x, o.y, o.z, o.w]));
-    let [x, y, z, w] = math::kdl_quaternion(&rotation);
-    Pose {
-        position: Point {
-            x: px + tf.translation[0],
-            y: py + tf.translation[1],
-            z: pz + tf.translation[2],
-        },
-        orientation: Quaternion { x, y, z, w },
+fn vector3([x, y, z]: math::Vec3) -> Vector3 {
+    Vector3 { x, y, z }
+}
+
+fn quat(q: &Quaternion) -> math::Quat {
+    [q.x, q.y, q.z, q.w]
+}
+
+fn quaternion([x, y, z, w]: math::Quat) -> Quaternion {
+    Quaternion { x, y, z, w }
+}
+
+fn transform_point32(r: &math::Mat3, t: math::Vec3, p: &Point32) -> Point32 {
+    let [x, y, z] = math::kdl_frame_vec(r, t, [p.x.into(), p.y.into(), p.z.into()]);
+    Point32 {
+        x: x as f32,
+        y: y as f32,
+        z: z as f32,
     }
 }
 
 /// Rotated and translated.
 impl Transformable for Point {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
-        let [x, y, z] = transform_point(tf, [self.x, self.y, self.z]);
+        let r = math::kdl_rotation(tf.rotation);
+        let [x, y, z] = math::kdl_frame_vec(&r, tf.translation, [self.x, self.y, self.z]);
         Ok(Point { x, y, z })
     }
 }
 
-/// Rotated only: a direction is not affected by the translation.
-impl Transformable for Vector3Stamped {
+impl_stamped!(PointStamped, point);
+
+/// Computed in `f64`, as KDL does, then cast back to `f32`.
+impl Transformable for Point32 {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
-        let v = &self.vector;
-        let [x, y, z] = math::mat_vec(&math::kdl_rotation(tf.rotation), [v.x, v.y, v.z]);
-        Ok(Vector3Stamped {
-            header: header_from_transform(tf),
-            vector: Vector3 { x, y, z },
+        let r = math::kdl_rotation(tf.rotation);
+        Ok(transform_point32(&r, tf.translation, self))
+    }
+}
+
+/// Each point is transformed as a `Point32`.
+impl Transformable for Polygon {
+    fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+        let r = math::kdl_rotation(tf.rotation);
+        Ok(Polygon {
+            points: self
+                .points
+                .iter()
+                .map(|p| transform_point32(&r, tf.translation, p))
+                .collect(),
         })
     }
 }
 
-/// The transform is composed with the pose: `tf * pose`.
-impl Transformable for Pose {
+impl_stamped!(PolygonStamped, polygon);
+
+/// Rotated only: a direction is not affected by the translation.
+impl Transformable for Vector3 {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
-        Ok(transform_pose(tf, self))
+        Ok(vector3(math::mat_vec(
+            &math::kdl_rotation(tf.rotation),
+            vec3(self),
+        )))
     }
 }
 
-/// The pose is composed with the transform and each 3x3 block of the covariance
-/// is rotated into the new frame.
-impl Transformable for PoseWithCovarianceStamped {
+impl_stamped!(Vector3Stamped, vector);
+
+/// `tf * q`, with tf2's quaternion product. Not normalised. Unlike a pose's
+/// orientation, which is rebuilt from a matrix, this keeps the sign the product
+/// gives, so the same rotation can come out with the opposite sign.
+impl Transformable for Quaternion {
     fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
-        Ok(PoseWithCovarianceStamped {
+        Ok(quaternion(math::quat_mul(tf.rotation, quat(self))))
+    }
+}
+
+impl_stamped!(QuaternionStamped, quaternion);
+
+/// The transform is composed with the pose: `tf * pose`. The orientation is rebuilt
+/// from the composed matrix, as KDL does, so its sign does not follow the input's:
+/// `q` and `-q` give the same result, and the sign can jump as a rotation passes 120
+/// degrees.
+impl Transformable for Pose {
+    fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+        let p = &self.position;
+        let ([x, y, z], rotation) = math::kdl_frame_mul(
+            tf.rotation,
+            tf.translation,
+            [p.x, p.y, p.z],
+            quat(&self.orientation),
+        );
+        Ok(Pose {
+            position: Point { x, y, z },
+            orientation: quaternion(rotation),
+        })
+    }
+}
+
+impl_stamped!(PoseStamped, pose);
+
+/// The pose as `Pose`, and each 3x3 block of the covariance is rotated into the new
+/// frame, normalising the quaternion where the pose does not.
+impl Transformable for PoseWithCovariance {
+    fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+        Ok(PoseWithCovariance {
+            pose: self.pose.apply_transform(tf)?,
+            covariance: math::rotate_covariance6(
+                &self.covariance,
+                &math::tf2_rotation(tf.rotation),
+            ),
+        })
+    }
+}
+
+impl_stamped!(PoseWithCovarianceStamped, pose);
+
+/// The transform is composed with this one, as for `Pose`.
+impl Transformable for Transform {
+    fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+        let (translation, rotation) = math::kdl_frame_mul(
+            tf.rotation,
+            tf.translation,
+            vec3(&self.translation),
+            quat(&self.rotation),
+        );
+        Ok(Transform {
+            translation: vector3(translation),
+            rotation: quaternion(rotation),
+        })
+    }
+}
+
+crate::impl_has_header_for_ros2_msg!(TransformStampedMsg);
+
+/// As `Transform`, with the header from the transform. `child_frame_id` follows the
+/// installed tf2_geometry_msgs: newer versions copy it from the input, older ones
+/// leave it empty.
+impl Transformable for TransformStampedMsg {
+    fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+        Ok(TransformStampedMsg {
             header: header_from_transform(tf),
-            pose: PoseWithCovariance {
-                pose: transform_pose(tf, &self.pose.pose),
-                covariance: math::rotate_covariance6(
-                    &self.pose.covariance,
-                    &math::tf2_rotation(tf.rotation),
-                ),
+            child_frame_id: if cfg!(tf2_copies_child_frame_id) {
+                self.child_frame_id.clone()
+            } else {
+                String::new()
+            },
+            transform: self.transform.apply_transform(tf)?,
+        })
+    }
+}
+
+/// The force is rotated. The torque is rotated, then gains the torque created by
+/// moving the force: `translation x force`.
+impl Transformable for Wrench {
+    fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+        let r = math::kdl_rotation(tf.rotation);
+        let force = math::mat_vec(&r, vec3(&self.force));
+        let torque = math::mat_vec(&r, vec3(&self.torque));
+        Ok(Wrench {
+            force: vector3(force),
+            torque: vector3(math::add(torque, math::tf2_cross(tf.translation, force))),
+        })
+    }
+}
+
+impl_stamped!(WrenchStamped, wrench);
+
+/// `angular` is rotated, and `linear` is rotated and gains
+/// `translation x rotated angular`. The rotation is normalised. `body_frame_id` and
+/// `reference_frame_id` are left empty.
+///
+/// **Follows the installed tf2_geometry_msgs, and the result depends on it.** Newer
+/// versions (Lyrical, Rolling) return that result with the header from the
+/// transform. Older ones (Humble, Jazzy, Kilted) also add the input velocity to the
+/// result and keep the input's header, so the output's header does not name the
+/// frame it is expressed in.
+///
+/// Like upstream, this type has no `HasHeader`, so it cannot go through
+/// `BufferCore::transform`: look the transform up and call `do_transform`.
+impl Transformable for VelocityStamped {
+    fn apply_transform(&self, tf: &TransformStamped) -> Result<Self, Tf2Error> {
+        let basis = math::tf2_rotation(tf.rotation);
+        let (linear_in, angular_in) = (vec3(&self.velocity.linear), vec3(&self.velocity.angular));
+        let angular = math::mat_vec(&basis, angular_in);
+        let linear = math::add(
+            math::mat_vec(&basis, linear_in),
+            math::tf2_cross(tf.translation, angular),
+        );
+        let (header, linear, angular) = if cfg!(tf2_velocity_adds_input) {
+            (
+                self.header.clone(),
+                math::add(linear, linear_in),
+                math::add(angular, angular_in),
+            )
+        } else {
+            (header_from_transform(tf), linear, angular)
+        };
+        Ok(VelocityStamped {
+            header,
+            body_frame_id: String::new(),
+            reference_frame_id: String::new(),
+            velocity: Twist {
+                linear: vector3(linear),
+                angular: vector3(angular),
             },
         })
     }
@@ -129,8 +250,23 @@ mod tests {
         }
     }
 
-    fn quat(q: &Quaternion) -> [f64; 4] {
-        [q.x, q.y, q.z, q.w]
+    fn yaw_90() -> TransformStamped {
+        let mut tf = make_tf([1.0, 2.0, 3.0], [0.0, 0.0, S, S]);
+        tf.stamp_sec = 7;
+        tf.stamp_nanosec = 8;
+        tf
+    }
+
+    fn assert_header_from_transform<T: HasHeader>(out: &T) {
+        assert_eq!(out.frame_id(), "map");
+        assert_eq!(out.stamp(), (7, 8));
+    }
+
+    fn input_header() -> ros_env::std_msgs::msg::Header {
+        ros_env::std_msgs::msg::Header {
+            stamp: ros_env::builtin_interfaces::msg::Time { sec: 1, nanosec: 2 },
+            frame_id: "input".into(),
+        }
     }
 
     #[test]
@@ -144,6 +280,19 @@ mod tests {
         .apply_transform(&tf)
         .unwrap();
         assert_close(&[p.x, p.y, p.z], &[1.0, 3.0, 3.0], 1e-12, "point");
+    }
+
+    #[test]
+    fn vector3_is_rotated_without_translation() {
+        let tf = make_tf([10.0, 20.0, 30.0], [0.0, 0.0, S, S]); // 90 deg yaw
+        let v = Vector3 {
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+        }
+        .apply_transform(&tf)
+        .unwrap();
+        assert_close(&[v.x, v.y, v.z], &[0.0, 1.0, 0.0], 1e-12, "vector");
     }
 
     #[test]
@@ -280,6 +429,225 @@ mod tests {
                 assert!((norm(&c) - norm(&cov)).abs() < 1e-8, "block norm");
             }
         }
+    }
+
+    #[test]
+    fn point_stamped_takes_transform_header() {
+        let msg = PointStamped {
+            header: input_header(),
+            point: Point {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        };
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        let p = &out.point;
+        assert_close(&[p.x, p.y, p.z], &[1.0, 3.0, 3.0], 1e-12, "point");
+        assert_header_from_transform(&out);
+    }
+
+    #[test]
+    fn point32_is_rotated_then_translated() {
+        let p = Point32 {
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+        }
+        .apply_transform(&yaw_90())
+        .unwrap();
+        assert_eq!([p.x, p.y, p.z], [1.0, 3.0, 3.0]);
+    }
+
+    #[test]
+    fn polygon_transforms_every_point_and_may_be_empty() {
+        let tf = yaw_90();
+        let point = |x, y, z| Point32 { x, y, z };
+        let polygon = Polygon {
+            points: vec![point(1.0, 0.0, 0.0), point(0.0, 1.0, 0.0)],
+        };
+        let out = polygon.apply_transform(&tf).unwrap();
+        let got: Vec<f64> = out
+            .points
+            .iter()
+            .flat_map(|p| [p.x, p.y, p.z])
+            .map(f64::from)
+            .collect();
+        assert_close(&got, &[1.0, 3.0, 3.0, 0.0, 2.0, 3.0], 1e-6, "points");
+
+        let empty = Polygon { points: vec![] };
+        assert!(empty.apply_transform(&tf).unwrap().points.is_empty());
+    }
+
+    #[test]
+    fn polygon_stamped_takes_transform_header() {
+        let msg = PolygonStamped {
+            header: input_header(),
+            polygon: Polygon {
+                points: vec![Point32 {
+                    x: 1.0,
+                    y: 0.0,
+                    z: 0.0,
+                }],
+            },
+        };
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        assert_eq!(out.polygon.points.len(), 1);
+        assert_header_from_transform(&out);
+    }
+
+    #[test]
+    fn quaternion_is_the_product_with_the_transform() {
+        // 90 + 90 deg yaw = 180 deg.
+        let q = quaternion([0.0, 0.0, S, S])
+            .apply_transform(&yaw_90())
+            .unwrap();
+        assert_close(&quat(&q), &[0.0, 0.0, 1.0, 0.0], 1e-12, "quaternion");
+    }
+
+    #[test]
+    fn quaternion_stamped_takes_transform_header() {
+        let msg = QuaternionStamped {
+            header: input_header(),
+            quaternion: quaternion([0.0, 0.0, 0.0, 1.0]),
+        };
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        assert_close(
+            &quat(&out.quaternion),
+            &[0.0, 0.0, S, S],
+            1e-12,
+            "quaternion",
+        );
+        assert_header_from_transform(&out);
+    }
+
+    #[test]
+    fn pose_stamped_takes_transform_header() {
+        let msg = PoseStamped {
+            header: input_header(),
+            pose: pose([1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]),
+        };
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        let p = &out.pose.position;
+        assert_close(&[p.x, p.y, p.z], &[1.0, 3.0, 3.0], 1e-12, "position");
+        assert_header_from_transform(&out);
+    }
+
+    #[test]
+    fn pose_with_covariance_rotates_pose_and_covariance() {
+        let mut msg = PoseWithCovariance {
+            pose: pose([1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]),
+            ..Default::default()
+        };
+        msg.covariance[0] = 1.0; // x
+        msg.covariance[7] = 2.0; // y
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        let p = &out.pose.position;
+        assert_close(&[p.x, p.y, p.z], &[1.0, 3.0, 3.0], 1e-12, "position");
+        assert_close(
+            &[out.covariance[0], out.covariance[7]],
+            &[2.0, 1.0],
+            1e-12,
+            "covariance",
+        );
+    }
+
+    #[test]
+    fn transform_is_composed_with_the_transform() {
+        let msg = Transform {
+            translation: vector3([1.0, 0.0, 0.0]),
+            rotation: quaternion([0.0, 0.0, S, S]),
+        };
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        assert_close(
+            &vec3(&out.translation),
+            &[1.0, 3.0, 3.0],
+            1e-12,
+            "translation",
+        );
+        assert_close(
+            &quat(&out.rotation),
+            &[0.0, 0.0, 1.0, 0.0],
+            1e-12,
+            "rotation",
+        );
+    }
+
+    #[test]
+    fn transform_stamped_child_frame_follows_the_installed_tf2() {
+        let msg = TransformStampedMsg {
+            header: input_header(),
+            child_frame_id: "child".into(),
+            transform: Transform {
+                translation: vector3([1.0, 0.0, 0.0]),
+                rotation: quaternion([0.0, 0.0, 0.0, 1.0]),
+            },
+        };
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        assert_close(
+            &vec3(&out.transform.translation),
+            &[1.0, 3.0, 3.0],
+            1e-12,
+            "translation",
+        );
+        assert_header_from_transform(&out);
+        let expected = if cfg!(tf2_copies_child_frame_id) {
+            "child"
+        } else {
+            ""
+        };
+        assert_eq!(out.child_frame_id, expected);
+    }
+
+    #[test]
+    fn wrench_torque_gains_the_moved_force() {
+        let msg = Wrench {
+            force: vector3([1.0, 0.0, 0.0]),
+            torque: vector3([0.0, 0.0, 1.0]),
+        };
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        // The force becomes (0, 1, 0). (1, 2, 3) x (0, 1, 0) = (-3, 0, 1).
+        assert_close(&vec3(&out.force), &[0.0, 1.0, 0.0], 1e-12, "force");
+        assert_close(&vec3(&out.torque), &[-3.0, 0.0, 2.0], 1e-12, "torque");
+    }
+
+    #[test]
+    fn wrench_stamped_takes_transform_header() {
+        let msg = WrenchStamped {
+            header: input_header(),
+            wrench: Wrench {
+                force: vector3([1.0, 0.0, 0.0]),
+                torque: vector3([0.0, 0.0, 0.0]),
+            },
+        };
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        assert_close(&vec3(&out.wrench.force), &[0.0, 1.0, 0.0], 1e-12, "force");
+        assert_header_from_transform(&out);
+    }
+
+    #[test]
+    fn velocity_stamped_follows_the_installed_tf2() {
+        let msg = VelocityStamped {
+            header: input_header(),
+            body_frame_id: "body".into(),
+            reference_frame_id: "reference".into(),
+            velocity: Twist {
+                linear: vector3([1.0, 0.0, 0.0]),
+                angular: vector3([0.0, 0.0, 1.0]),
+            },
+        };
+        let out = msg.apply_transform(&yaw_90()).unwrap();
+        // Rotated: linear (0, 1, 0), angular (0, 0, 1). (1, 2, 3) x (0, 0, 1) = (2, -1, 0).
+        let (linear, angular, frame, stamp) = if cfg!(tf2_velocity_adds_input) {
+            ([3.0, 0.0, 0.0], [0.0, 0.0, 2.0], "input", (1, 2))
+        } else {
+            ([2.0, 0.0, 0.0], [0.0, 0.0, 1.0], "map", (7, 8))
+        };
+        assert_close(&vec3(&out.velocity.linear), &linear, 1e-12, "linear");
+        assert_close(&vec3(&out.velocity.angular), &angular, 1e-12, "angular");
+        assert_eq!(out.header.frame_id, frame);
+        assert_eq!((out.header.stamp.sec, out.header.stamp.nanosec), stamp);
+        assert!(out.body_frame_id.is_empty() && out.reference_frame_id.is_empty());
     }
 
     // Issue #8: look the transform up, then apply it to a header-less Pose.

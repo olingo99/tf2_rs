@@ -31,6 +31,43 @@ pub(crate) fn mat_vec(m: &Mat3, v: Vec3) -> Vec3 {
     ]
 }
 
+pub(crate) fn add(a: Vec3, b: Vec3) -> Vec3 {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+/// KDL's `Frame * Vector`: rotated, then translated.
+pub(crate) fn kdl_frame_vec(r: &Mat3, t: Vec3, v: Vec3) -> Vec3 {
+    add(mat_vec(r, v), t)
+}
+
+/// KDL's `Frame * Frame` for a frame given as a translation and a quaternion, with
+/// the resulting rotation read back through `GetQuaternion`.
+pub(crate) fn kdl_frame_mul(
+    tf_rotation: Quat,
+    tf_translation: Vec3,
+    translation: Vec3,
+    rotation: Quat,
+) -> (Vec3, Quat) {
+    let r = kdl_rotation(tf_rotation);
+    (
+        kdl_frame_vec(&r, tf_translation, translation),
+        kdl_quaternion(&mat_mul(&r, &kdl_rotation(rotation))),
+    )
+}
+
+/// Eigen's `Affine3d * Vector3d` with no translation. Eigen still adds the zero
+/// translation, which turns -0.0 into 0.0.
+pub(crate) fn eigen_rotate(m: &Mat3, v: Vec3) -> Vec3 {
+    mat_vec(m, v).map(|c| c + 0.0)
+}
+
+/// Eigen's `Affine3f * Vector3f`: `r * v + t`, summed in this order. With a zero
+/// translation it also turns -0.0 into 0.0.
+#[inline]
+pub(crate) fn eigen_affine_f32(r: &[[f32; 3]; 3], t: [f32; 3], v: [f32; 3]) -> [f32; 3] {
+    std::array::from_fn(|i| r[i][0] * v[0] + r[i][1] * v[1] + r[i][2] * v[2] + t[i])
+}
+
 pub(crate) fn transpose(m: &Mat3) -> Mat3 {
     [
         [m[0][0], m[1][0], m[2][0]],
@@ -148,8 +185,7 @@ pub(crate) fn eigen_rotation_f32(q: [f32; 4]) -> [[f32; 3]; 3] {
 }
 
 /// Hamilton product `a * b`, summed left to right as `tf2::Quaternion`'s
-/// `operator*` does. Only the tests use it until the Quaternion transform lands.
-#[cfg(test)]
+/// `operator*` does.
 pub(crate) fn quat_mul(a: Quat, b: Quat) -> Quat {
     let [ax, ay, az, aw] = a;
     let [bx, by, bz, bw] = b;
@@ -242,4 +278,31 @@ pub(crate) fn rotate_covariance3(cov: &[f64; 9], r: Quat) -> [f64; 9] {
     [
         m[0][0], m[0][1], m[0][2], m[1][0], m[1][1], m[1][2], m[2][0], m[2][1], m[2][2],
     ]
+}
+
+/// Cross product `a x b` as `tf2::Vector3::cross`.
+pub(crate) fn tf2_cross(a: Vec3, b: Vec3) -> Vec3 {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tf2_cross_follows_the_right_hand_rule() {
+        assert_eq!(tf2_cross([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]), [0.0, 0.0, 1.0]);
+        assert_eq!(
+            tf2_cross([0.0, 1.0, 0.0], [1.0, 0.0, 0.0]),
+            [0.0, 0.0, -1.0]
+        );
+        assert_eq!(
+            tf2_cross([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]),
+            [-3.0, 6.0, -3.0]
+        );
+    }
 }
