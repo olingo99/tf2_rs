@@ -11,7 +11,9 @@
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_msgs</depend>
-  <depend>tf2_sensor_msgs</depend>
+
+  <!-- Only the parity tests in oracle/ compare with upstream tf2_sensor_msgs. -->
+  <test_depend>tf2_sensor_msgs</test_depend>
 
   <export>
     <build_type>ament_cargo</build_type>
