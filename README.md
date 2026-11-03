@@ -45,7 +45,7 @@ In your own `ament_cargo` package, add `tf2_rs` next to the `rclrs` and
 
 ```toml
 [dependencies]
-tf2_rs = "0.1"
+tf2_rs = "0.2"
 rclrs = "0.8"
 ros-env = "0.3"
 ```
